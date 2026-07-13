@@ -256,7 +256,7 @@ private struct UsageHistoryCard: View {
     let latestArchivedDate: String?
     let verifyArchive: () -> Void
 
-    @State private var range: HistoryRange = .month
+    @State private var range: HistoryRange = .week
     @State private var selectedDate: Date?
     @State private var showsArchiveDetails = false
 
@@ -348,7 +348,7 @@ private struct UsageHistoryCard: View {
             } else {
                 Chart(visibleHistory) { bucket in
                     if let date = bucket.date {
-                        BarMark(
+                        LineMark(
                             x: .value("日期", date, unit: .day),
                             y: .value("Token", bucket.tokens)
                         )
@@ -357,7 +357,7 @@ private struct UsageHistoryCard: View {
                                 ? UsagePalette.blue
                                 : UsagePalette.blue.opacity(0.78)
                         )
-                        .cornerRadius(2)
+                        .lineStyle(.init(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
                     }
                 }
                 .chartYAxis {
