@@ -27,7 +27,7 @@ struct DashboardView: View {
                             history: viewModel.history,
                             todayLocalTokens: viewModel.todayLocalTokens,
                             summary: snapshot.usage.summary,
-                            chartHeight: max(82, geometry.size.height - 205),
+                            chartHeight: max(80, geometry.size.height - 205),
                             archiveStatus: viewModel.archiveVerificationStatus,
                             latestArchivedDate: viewModel.latestArchivedDate,
                             verifyArchive: viewModel.verifyArchive
@@ -66,8 +66,8 @@ struct DashboardView: View {
             minWidth: 720,
             idealWidth: 760,
             maxWidth: .infinity,
-            minHeight: 380,
-            idealHeight: 400,
+            minHeight: 350,
+            idealHeight: 350,
             maxHeight: .infinity
         )
         .background(Color(nsColor: .windowBackgroundColor))
@@ -258,11 +258,13 @@ private struct UsageHistoryCard: View {
     let verifyArchive: () -> Void
 
     @State private var range: HistoryRange = .week
-    @State private var selectedDate: Date?
-    @State private var hoverLocation: CGPoint?
+    @State private var visibleHistory: [DailyUsageBucket] = []
+    @State private var sevenDayTokens: Int64?
+    @State private var thirtyDayTokens: Int64?
+    @State private var selectedBucketID: String?
     @State private var showsArchiveDetails = false
 
-    private var visibleHistory: [DailyUsageBucket] {
+    private func updateVisibleHistory() {
         guard
             let dayCount = range.dayCount,
             let latestDate = history.compactMap(\.date).max(),
@@ -272,59 +274,78 @@ private struct UsageHistoryCard: View {
                 to: latestDate
             )
         else {
-            return history
+            visibleHistory = history
+            selectedBucketID = nil
+            return
         }
-        return history.filter { bucket in
+        visibleHistory = history.filter { bucket in
             guard let date = bucket.date else { return false }
             return date >= lowerBound && date <= latestDate
         }
+        selectedBucketID = nil
     }
 
-    private var selectedBucket: DailyUsageBucket? {
-        guard let selectedDate else { return nil }
-        return visibleHistory.min {
-            abs(($0.date ?? .distantPast).timeIntervalSince(selectedDate)) <
-                abs(($1.date ?? .distantPast).timeIntervalSince(selectedDate))
+    private func updateRollingTotals() {
+        guard let latestDate = history.compactMap(\.date).max() else {
+            sevenDayTokens = nil
+            thirtyDayTokens = nil
+            return
         }
+
+        sevenDayTokens = rollingTotal(days: 7, endingAt: latestDate)
+        thirtyDayTokens = rollingTotal(days: 30, endingAt: latestDate)
     }
 
-    private var visibleTokenTotal: Int64 {
-        visibleHistory.reduce(into: Int64.zero) { total, bucket in
+    private func rollingTotal(days: Int, endingAt latestDate: Date) -> Int64 {
+        guard let lowerBound = Calendar(identifier: .gregorian).date(
+            byAdding: .day,
+            value: -(days - 1),
+            to: latestDate
+        ) else {
+            return 0
+        }
+
+        return history.reduce(into: Int64.zero) { total, bucket in
+            guard let date = bucket.date, date >= lowerBound, date <= latestDate else { return }
             total += bucket.tokens
         }
     }
 
+    private var selectedBucket: DailyUsageBucket? {
+        guard let selectedBucketID else { return nil }
+        return visibleHistory.first { $0.id == selectedBucketID }
+    }
+
+    private func nearestBucket(to date: Date) -> DailyUsageBucket? {
+        visibleHistory.min {
+            abs(($0.date ?? .distantPast).timeIntervalSince(date)) <
+                abs(($1.date ?? .distantPast).timeIntervalSince(date))
+        }
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("今天用了多少 Token")
-                    .font(.headline)
-                if let todayLocalTokens {
-                    Text(todayLocalTokens.millionTokenCount)
-                        .font(.system(size: 24, weight: .bold, design: .rounded))
-                        .monospacedDigit()
-                } else {
-                    Text("本机实时统计不可用")
-                        .font(.title3.weight(.semibold))
-                }
-                Text("实时统计（这台电脑）")
-                    .font(.caption)
-                    .foregroundStyle(UsagePalette.blue)
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top, spacing: 28) {
+                UsageSummaryMetric(label: "1d 消耗", value: todayLocalTokens, accent: true)
+                UsageSummaryMetric(label: "7d 消耗", value: sevenDayTokens)
+                UsageSummaryMetric(label: "30d 消耗", value: thirtyDayTokens)
             }
 
             Divider().opacity(0.35)
+                .padding(.vertical, 2)
 
             HStack(spacing: 8) {
                 rangePicker
                 Spacer(minLength: 8)
                 verifyButton
             }
+            .padding(.bottom, 16)
 
             if visibleHistory.isEmpty {
                 Text("服务端暂未返回每日 Token 数据")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, minHeight: 150)
+                    .frame(maxWidth: .infinity, minHeight: 85)
             } else {
                 Chart(visibleHistory) { bucket in
                     if let date = bucket.date {
@@ -332,11 +353,7 @@ private struct UsageHistoryCard: View {
                             x: .value("日期", date, unit: .day),
                             y: .value("Token", bucket.tokens)
                         )
-                        .foregroundStyle(
-                            selectedBucket?.id == bucket.id
-                                ? UsagePalette.blue
-                                : UsagePalette.blue.opacity(0.78)
-                        )
+                        .foregroundStyle(UsagePalette.blue.opacity(0.78))
                         .lineStyle(.init(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
 
                         if selectedBucket?.id == bucket.id {
@@ -368,45 +385,46 @@ private struct UsageHistoryCard: View {
                                 switch phase {
                                 case .active(let location):
                                     let plotOrigin = geometry[proxy.plotAreaFrame].origin
-                                    selectedDate = proxy.value(
+                                    guard let date = proxy.value(
                                         atX: location.x - plotOrigin.x,
                                         as: Date.self
-                                    )
-                                    hoverLocation = location
+                                    ), let bucket = nearestBucket(to: date) else { return }
+
+                                    // Hover events arrive for every pointer pixel. Changing state
+                                    // only when the closest day changes keeps the chart responsive.
+                                    if selectedBucketID != bucket.id {
+                                        var transaction = Transaction()
+                                        transaction.animation = nil
+                                        withTransaction(transaction) {
+                                            selectedBucketID = bucket.id
+                                        }
+                                    }
                                 case .ended:
-                                    selectedDate = nil
-                                    hoverLocation = nil
+                                    selectedBucketID = nil
                                 }
                             }
 
-                        if let selectedBucket, let hoverLocation {
+                        if let selectedBucket,
+                           let date = selectedBucket.date,
+                           let xPosition = proxy.position(forX: date),
+                           let yPosition = proxy.position(forY: selectedBucket.tokens) {
+                            let plotOrigin = geometry[proxy.plotAreaFrame].origin
                             ChartHoverTooltip(bucket: selectedBucket)
                                 .position(
-                                    x: min(max(hoverLocation.x + 88, 80), geometry.size.width - 80),
-                                    y: max(30, hoverLocation.y - 42)
+                                    x: min(
+                                        max(plotOrigin.x + xPosition + 78, 78),
+                                        geometry.size.width - 78
+                                    ),
+                                    y: max(26, plotOrigin.y + yPosition - 34)
                                 )
                                 .allowsHitTesting(false)
                         }
                     }
                 }
+                .transaction { $0.animation = nil }
                 .frame(height: chartHeight)
             }
 
-            HStack(spacing: 16) {
-                Label("今天：实时统计", systemImage: "circle.fill")
-                    .foregroundStyle(UsagePalette.blue)
-                Label("之前：Codex 最终数据", systemImage: "circle.fill")
-                Spacer()
-            }
-            .font(.caption2)
-            .foregroundStyle(.secondary)
-
-            Button(action: { showsArchiveDetails = true }) {
-                Text("今天结束后，会用 Codex 的最终数据替换实时统计")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-            .buttonStyle(.plain)
         }
         .cardStyle()
         .sheet(isPresented: $showsArchiveDetails) {
@@ -415,6 +433,15 @@ private struct UsageHistoryCard: View {
                 latestArchivedDate: latestArchivedDate
             )
         }
+        .onAppear {
+            updateVisibleHistory()
+            updateRollingTotals()
+        }
+        .onChange(of: history) { _ in
+            updateVisibleHistory()
+            updateRollingTotals()
+        }
+        .onChange(of: range) { _ in updateVisibleHistory() }
     }
 
     private var verifyButton: some View {
@@ -438,6 +465,26 @@ private struct UsageHistoryCard: View {
     }
 }
 
+private struct UsageSummaryMetric: View {
+    let label: String
+    let value: Int64?
+    var accent = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label)
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(.secondary)
+            Text(value?.millionTokenCount ?? "--")
+                .font(.system(size: 22, weight: .bold, design: .rounded))
+                .monospacedDigit()
+                .foregroundStyle(accent ? UsagePalette.blue : .primary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .help(accent ? "1d 为这台电脑的实时统计；历史日期使用 Codex 最终数据。" : "按最近完整日数据滚动汇总。")
+    }
+}
+
 private struct ChartHoverTooltip: View {
     let bucket: DailyUsageBucket
 
@@ -452,7 +499,10 @@ private struct ChartHoverTooltip: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .background(
+            Color(nsColor: .windowBackgroundColor).opacity(0.96),
+            in: RoundedRectangle(cornerRadius: 7, style: .continuous)
+        )
         .overlay {
             RoundedRectangle(cornerRadius: 7, style: .continuous)
                 .strokeBorder(.white.opacity(0.16), lineWidth: 1)
@@ -603,7 +653,7 @@ private struct ErrorBanner: View {
 
 private extension View {
     func cardStyle() -> some View {
-        padding(10)
+        padding(14)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 14))
     }
