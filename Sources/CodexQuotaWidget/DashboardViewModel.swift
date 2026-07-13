@@ -64,8 +64,19 @@ final class DashboardViewModel: ObservableObject {
             var mergedHistory = remoteHistory
 
             if let usageStore {
-                try await usageStore.merge(remoteHistory)
-                mergedHistory = try await usageStore.loadAll()
+                let currentDay = DailyUsageBucket.utcDayKey(for: newSnapshot.fetchedAt)
+                let completedRemoteHistory = remoteHistory.filter { $0.startDate < currentDay }
+                let liveCurrentDayHistory = remoteHistory.filter { $0.startDate == currentDay }
+
+                // The current UTC day is always shown directly from Codex. Only dates
+                // that have ended are retained as the local archive.
+                try await usageStore.merge(completedRemoteHistory)
+                let archivedHistory = try await usageStore.loadAll().filter {
+                    $0.startDate < currentDay
+                }
+                mergedHistory = (archivedHistory + liveCurrentDayHistory).sorted {
+                    $0.startDate < $1.startDate
+                }
             }
 
             snapshot = newSnapshot

@@ -56,4 +56,11 @@ final class ModelTests: XCTestCase {
         XCTAssertEqual(Int64(4_083_954).millionTokenCount, "4.08M")
         XCTAssertEqual(Int64(3_321_751_708).millionTokenCount, "3322M")
     }
+
+    func testDailyUsageUsesUTCDayKeys() {
+        XCTAssertEqual(
+            DailyUsageBucket.utcDayKey(for: Date(timeIntervalSince1970: 0)),
+            "1970-01-01"
+        )
+    }
 }

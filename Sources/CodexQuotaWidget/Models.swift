@@ -100,6 +100,10 @@ struct DailyUsageBucket: Codable, Equatable, Identifiable {
         Self.dateFormatter.date(from: startDate)
     }
 
+    static func utcDayKey(for date: Date = .now) -> String {
+        dateFormatter.string(from: date)
+    }
+
     private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)

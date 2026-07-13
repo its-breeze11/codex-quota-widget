@@ -1,0 +1,263 @@
+{
+  "schemaVersion": 1,
+  "timeZone": "UTC",
+  "exportedAtUTC": "2026-07-13T12:00:15Z",
+  "source": "codex app-server account/usage/read",
+  "dailyUsage": [
+    {
+      "date": "2026-05-21",
+      "tokens": 2427506,
+      "isFinal": true
+    },
+    {
+      "date": "2026-05-22",
+      "tokens": 17535174,
+      "isFinal": true
+    },
+    {
+      "date": "2026-05-23",
+      "tokens": 6438039,
+      "isFinal": true
+    },
+    {
+      "date": "2026-05-25",
+      "tokens": 7671586,
+      "isFinal": true
+    },
+    {
+      "date": "2026-05-26",
+      "tokens": 57984613,
+      "isFinal": true
+    },
+    {
+      "date": "2026-05-27",
+      "tokens": 46748530,
+      "isFinal": true
+    },
+    {
+      "date": "2026-05-28",
+      "tokens": 49318458,
+      "isFinal": true
+    },
+    {
+      "date": "2026-05-29",
+      "tokens": 69805924,
+      "isFinal": true
+    },
+    {
+      "date": "2026-05-30",
+      "tokens": 25040086,
+      "isFinal": true
+    },
+    {
+      "date": "2026-05-31",
+      "tokens": 60256027,
+      "isFinal": true
+    },
+    {
+      "date": "2026-06-01",
+      "tokens": 85185197,
+      "isFinal": true
+    },
+    {
+      "date": "2026-06-02",
+      "tokens": 107745697,
+      "isFinal": true
+    },
+    {
+      "date": "2026-06-03",
+      "tokens": 92285442,
+      "isFinal": true
+    },
+    {
+      "date": "2026-06-04",
+      "tokens": 97365997,
+      "isFinal": true
+    },
+    {
+      "date": "2026-06-05",
+      "tokens": 46113464,
+      "isFinal": true
+    },
+    {
+      "date": "2026-06-07",
+      "tokens": 31336888,
+      "isFinal": true
+    },
+    {
+      "date": "2026-06-08",
+      "tokens": 149254580,
+      "isFinal": true
+    },
+    {
+      "date": "2026-06-09",
+      "tokens": 61161562,
+      "isFinal": true
+    },
+    {
+      "date": "2026-06-10",
+      "tokens": 76741400,
+      "isFinal": true
+    },
+    {
+      "date": "2026-06-11",
+      "tokens": 82808557,
+      "isFinal": true
+    },
+    {
+      "date": "2026-06-12",
+      "tokens": 39230774,
+      "isFinal": true
+    },
+    {
+      "date": "2026-06-13",
+      "tokens": 2141549,
+      "isFinal": true
+    },
+    {
+      "date": "2026-06-14",
+      "tokens": 44235666,
+      "isFinal": true
+    },
+    {
+      "date": "2026-06-15",
+      "tokens": 87259715,
+      "isFinal": true
+    },
+    {
+      "date": "2026-06-16",
+      "tokens": 59003672,
+      "isFinal": true
+    },
+    {
+      "date": "2026-06-17",
+      "tokens": 44691128,
+      "isFinal": true
+    },
+    {
+      "date": "2026-06-18",
+      "tokens": 27282206,
+      "isFinal": true
+    },
+    {
+      "date": "2026-06-19",
+      "tokens": 10759316,
+      "isFinal": true
+    },
+    {
+      "date": "2026-06-20",
+      "tokens": 671189,
+      "isFinal": true
+    },
+    {
+      "date": "2026-06-21",
+      "tokens": 5804978,
+      "isFinal": true
+    },
+    {
+      "date": "2026-06-22",
+      "tokens": 133742036,
+      "isFinal": true
+    },
+    {
+      "date": "2026-06-23",
+      "tokens": 70101048,
+      "isFinal": true
+    },
+    {
+      "date": "2026-06-24",
+      "tokens": 85708208,
+      "isFinal": true
+    },
+    {
+      "date": "2026-06-25",
+      "tokens": 132664564,
+      "isFinal": true
+    },
+    {
+      "date": "2026-06-26",
+      "tokens": 177747315,
+      "isFinal": true
+    },
+    {
+      "date": "2026-06-27",
+      "tokens": 9854304,
+      "isFinal": true
+    },
+    {
+      "date": "2026-06-28",
+      "tokens": 5555775,
+      "isFinal": true
+    },
+    {
+      "date": "2026-06-29",
+      "tokens": 75575182,
+      "isFinal": true
+    },
+    {
+      "date": "2026-06-30",
+      "tokens": 99866291,
+      "isFinal": true
+    },
+    {
+      "date": "2026-07-01",
+      "tokens": 65418056,
+      "isFinal": true
+    },
+    {
+      "date": "2026-07-02",
+      "tokens": 231227547,
+      "isFinal": true
+    },
+    {
+      "date": "2026-07-03",
+      "tokens": 225567001,
+      "isFinal": true
+    },
+    {
+      "date": "2026-07-04",
+      "tokens": 34651205,
+      "isFinal": true
+    },
+    {
+      "date": "2026-07-05",
+      "tokens": 11512274,
+      "isFinal": true
+    },
+    {
+      "date": "2026-07-06",
+      "tokens": 186903175,
+      "isFinal": true
+    },
+    {
+      "date": "2026-07-07",
+      "tokens": 46933554,
+      "isFinal": true
+    },
+    {
+      "date": "2026-07-08",
+      "tokens": 66629502,
+      "isFinal": true
+    },
+    {
+      "date": "2026-07-09",
+      "tokens": 97252671,
+      "isFinal": true
+    },
+    {
+      "date": "2026-07-10",
+      "tokens": 65952325,
+      "isFinal": true
+    },
+    {
+      "date": "2026-07-11",
+      "tokens": 500801,
+      "isFinal": true
+    },
+    {
+      "date": "2026-07-12",
+      "tokens": 4083954,
+      "isFinal": true
+    }
+  ]
+}
