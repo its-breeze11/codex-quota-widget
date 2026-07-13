@@ -20,12 +20,14 @@ final class FloatingPanel: NSPanel {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private static let panelFrameName = "CodexQuotaWidgetPanel-v6"
-    private static let panelSize = NSSize(width: 650, height: 390)
+    // Bump the autosave key so the compact default takes effect once before
+    // subsequent manual resizing is remembered.
+    private static let panelFrameName = "CodexQuotaWidgetPanel-v7"
+    private static let panelSize = NSSize(width: 760, height: 400)
     // This dashboard is designed as a two-column surface. Keep enough room for
     // the history chart and its footer instead of falling back to a vertically
     // scrolling layout or allowing the app footer to overlap card content.
-    private static let panelMinimumSize = NSSize(width: 620, height: 380)
+    private static let panelMinimumSize = NSSize(width: 720, height: 380)
 
     private let viewModel = DashboardViewModel()
     private var panel: FloatingPanel?

@@ -5,6 +5,7 @@ import Foundation
 final class DashboardViewModel: ObservableObject {
     @Published private(set) var snapshot: DashboardSnapshot?
     @Published private(set) var history: [DailyUsageBucket] = []
+    @Published private(set) var todayLocalTokens: Int64?
     @Published private(set) var isRefreshing = false
     @Published private(set) var errorMessage: String?
     @Published private(set) var lastUpdated: Date?
@@ -73,9 +74,10 @@ final class DashboardViewModel: ObservableObject {
             let newSnapshot = try await client.fetchSnapshot()
             let remoteHistory = newSnapshot.usage.dailyUsageBuckets ?? []
             var mergedHistory = remoteHistory
+            let currentDay = DailyUsageBucket.utcDayKey(for: newSnapshot.fetchedAt)
+            let localTokens = await LocalTodayUsageReader.usage(for: currentDay)
 
             if let usageStore {
-                let currentDay = DailyUsageBucket.utcDayKey(for: newSnapshot.fetchedAt)
                 var archivedHistory = try await usageStore.loadAll()
 
                 if verifyArchive {
@@ -110,8 +112,17 @@ final class DashboardViewModel: ObservableObject {
                 archiveVerificationStatus = .failed("本地归档不可用")
             }
 
+            // Today's server bucket can lag. Never archive or display it as final history;
+            // use this machine's session-log delta while the UTC day is still in progress.
+            mergedHistory.removeAll { $0.startDate == currentDay }
+            if let localTokens {
+                mergedHistory.append(DailyUsageBucket(startDate: currentDay, tokens: localTokens))
+                mergedHistory.sort { $0.startDate < $1.startDate }
+            }
+
             snapshot = newSnapshot
             history = mergedHistory
+            todayLocalTokens = localTokens
             lastUpdated = newSnapshot.fetchedAt
             errorMessage = nil
         } catch {

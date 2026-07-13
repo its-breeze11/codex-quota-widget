@@ -25,8 +25,9 @@ struct DashboardView: View {
 
                         UsageHistoryCard(
                             history: viewModel.history,
+                            todayLocalTokens: viewModel.todayLocalTokens,
                             summary: snapshot.usage.summary,
-                            chartHeight: max(82, geometry.size.height - 190),
+                            chartHeight: max(82, geometry.size.height - 205),
                             archiveStatus: viewModel.archiveVerificationStatus,
                             latestArchivedDate: viewModel.latestArchivedDate,
                             verifyArchive: viewModel.verifyArchive
@@ -59,14 +60,14 @@ struct DashboardView: View {
 
             footer
                 .padding(.horizontal, 14)
-                .padding(.bottom, 10)
+                .padding(.bottom, 6)
         }
         .frame(
-            minWidth: 620,
-            idealWidth: 650,
+            minWidth: 720,
+            idealWidth: 760,
             maxWidth: .infinity,
             minHeight: 380,
-            idealHeight: 390,
+            idealHeight: 400,
             maxHeight: .infinity
         )
         .background(Color(nsColor: .windowBackgroundColor))
@@ -103,7 +104,7 @@ struct DashboardView: View {
             .help("立即刷新")
         }
         .padding(.horizontal, 16)
-        .frame(height: 54)
+        .frame(height: 46)
         .contentShape(Rectangle())
     }
 
@@ -128,10 +129,10 @@ private struct QuotaCard: View {
     let bucket: RateLimitSnapshot
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(bucket.displayName)
+                    Text("当前可用额度")
                         .font(.headline)
                     if let plan = bucket.planType {
                         Text(plan)
@@ -155,15 +156,14 @@ private struct QuotaCard: View {
             }
 
             if let window = bucket.primary {
-                HStack(spacing: 18) {
-                    Text("已用 \(window.usedPercent)%")
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    Text("剩余 \(window.remainingPercent)%")
-                        .foregroundStyle(UsagePalette.blue)
-                        .frame(maxWidth: .infinity, alignment: .trailing)
-                }
-                .font(.title3.weight(.semibold))
+                Text("剩余 \(window.remainingPercent)%")
+            .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .foregroundStyle(UsagePalette.blue)
                 .monospacedDigit()
+
+                Text("已用 \(window.usedPercent)%")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
 
                 ProgressView(value: Double(window.usedPercent), total: 100)
                     .tint(progressColor(for: window.remainingPercent))
@@ -183,7 +183,7 @@ private struct ResetCreditsCard: View {
     let summary: ResetCreditsSummary?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 7) {
             HStack {
                 Label("额度重置", systemImage: "arrow.counterclockwise.circle.fill")
                     .font(.headline)
@@ -211,7 +211,7 @@ private struct ResetCreditsCard: View {
                             Text("未提供到期时间")
                         }
                     }
-                    .font(.caption)
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
                 }
                 if let summary, summary.availableCount > credits.count {
@@ -250,6 +250,7 @@ private enum HistoryRange: String, CaseIterable, Identifiable {
 
 private struct UsageHistoryCard: View {
     let history: [DailyUsageBucket]
+    let todayLocalTokens: Int64?
     let summary: AccountTokenUsageSummary
     let chartHeight: CGFloat
     let archiveStatus: ArchiveVerificationStatus
@@ -258,6 +259,7 @@ private struct UsageHistoryCard: View {
 
     @State private var range: HistoryRange = .week
     @State private var selectedDate: Date?
+    @State private var hoverLocation: CGPoint?
     @State private var showsArchiveDetails = false
 
     private var visibleHistory: [DailyUsageBucket] {
@@ -293,51 +295,29 @@ private struct UsageHistoryCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            ViewThatFits(in: .horizontal) {
-                HStack {
-                    title
-                    Spacer(minLength: 8)
-                    controls.fixedSize()
+        VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("今天用了多少 Token")
+                    .font(.headline)
+                if let todayLocalTokens {
+                    Text(todayLocalTokens.millionTokenCount)
+                        .font(.system(size: 24, weight: .bold, design: .rounded))
+                        .monospacedDigit()
+                } else {
+                    Text("本机实时统计不可用")
+                        .font(.title3.weight(.semibold))
                 }
-
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack {
-                        title
-                        Spacer()
-                        verifyButton
-                    }
-                    HStack {
-                        Spacer()
-                        rangePicker
-                    }
-                }
+                Text("实时统计（这台电脑）")
+                    .font(.caption)
+                    .foregroundStyle(UsagePalette.blue)
             }
 
-            ArchiveVerificationBanner(
-                status: archiveStatus,
-                latestArchivedDate: latestArchivedDate,
-                showDetails: { showsArchiveDetails = true }
-            )
+            Divider().opacity(0.35)
 
-            if let selectedBucket {
-                HStack {
-                    Text(selectedBucket.startDate)
-                        .font(.caption)
-                    Spacer()
-                    Text("\(selectedBucket.tokens.millionTokenCount) tokens")
-                        .font(.title2.weight(.semibold))
-                }
-                .monospacedDigit()
-            } else if let latest = visibleHistory.last {
-                HStack {
-                    Text("最新：\(latest.startDate)")
-                        .font(.caption)
-                    Spacer()
-                    Text("\(latest.tokens.millionTokenCount) tokens")
-                        .font(.title2.weight(.semibold))
-                }
-                .monospacedDigit()
+            HStack(spacing: 8) {
+                rangePicker
+                Spacer(minLength: 8)
+                verifyButton
             }
 
             if visibleHistory.isEmpty {
@@ -358,6 +338,15 @@ private struct UsageHistoryCard: View {
                                 : UsagePalette.blue.opacity(0.78)
                         )
                         .lineStyle(.init(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
+
+                        if selectedBucket?.id == bucket.id {
+                            PointMark(
+                                x: .value("日期", date, unit: .day),
+                                y: .value("Token", bucket.tokens)
+                            )
+                            .symbolSize(72)
+                            .foregroundStyle(UsagePalette.blue)
+                        }
                     }
                 }
                 .chartYAxis {
@@ -383,26 +372,41 @@ private struct UsageHistoryCard: View {
                                         atX: location.x - plotOrigin.x,
                                         as: Date.self
                                     )
+                                    hoverLocation = location
                                 case .ended:
                                     selectedDate = nil
+                                    hoverLocation = nil
                                 }
                             }
+
+                        if let selectedBucket, let hoverLocation {
+                            ChartHoverTooltip(bucket: selectedBucket)
+                                .position(
+                                    x: min(max(hoverLocation.x + 88, 80), geometry.size.width - 80),
+                                    y: max(30, hoverLocation.y - 42)
+                                )
+                                .allowsHitTesting(false)
+                        }
                     }
                 }
                 .frame(height: chartHeight)
             }
 
-            HStack {
-                if !visibleHistory.isEmpty {
-                    Label("\(range.rawValue) 累计 \(visibleTokenTotal.millionTokenCount)", systemImage: "sum")
-                }
+            HStack(spacing: 16) {
+                Label("今天：实时统计", systemImage: "circle.fill")
+                    .foregroundStyle(UsagePalette.blue)
+                Label("之前：Codex 最终数据", systemImage: "circle.fill")
                 Spacer()
-                if let streak = summary.currentStreakDays {
-                    Label("连续 \(streak) 天", systemImage: "flame.fill")
-                }
             }
             .font(.caption2)
             .foregroundStyle(.secondary)
+
+            Button(action: { showsArchiveDetails = true }) {
+                Text("今天结束后，会用 Codex 的最终数据替换实时统计")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+            .buttonStyle(.plain)
         }
         .cardStyle()
         .sheet(isPresented: $showsArchiveDetails) {
@@ -410,19 +414,6 @@ private struct UsageHistoryCard: View {
                 status: archiveStatus,
                 latestArchivedDate: latestArchivedDate
             )
-        }
-    }
-
-    private var title: some View {
-        Label("每日 Token", systemImage: "chart.bar.xaxis")
-            .font(.headline)
-            .fixedSize(horizontal: true, vertical: false)
-    }
-
-    private var controls: some View {
-        HStack(spacing: 8) {
-            verifyButton
-            rangePicker
         }
     }
 
@@ -444,6 +435,29 @@ private struct UsageHistoryCard: View {
         .labelsHidden()
         .pickerStyle(.segmented)
         .frame(width: 160)
+    }
+}
+
+private struct ChartHoverTooltip: View {
+    let bucket: DailyUsageBucket
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(bucket.startDate)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            Text("\(bucket.tokens.millionTokenCount) Token")
+                .font(.caption.weight(.semibold))
+                .monospacedDigit()
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 7, style: .continuous)
+                .strokeBorder(.white.opacity(0.16), lineWidth: 1)
+        }
+        .fixedSize()
     }
 }
 
@@ -589,7 +603,7 @@ private struct ErrorBanner: View {
 
 private extension View {
     func cardStyle() -> some View {
-        padding(14)
+        padding(10)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             .background(.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 14))
     }
