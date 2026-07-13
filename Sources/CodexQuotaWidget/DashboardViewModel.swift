@@ -8,6 +8,8 @@ final class DashboardViewModel: ObservableObject {
     @Published private(set) var isRefreshing = false
     @Published private(set) var errorMessage: String?
     @Published private(set) var lastUpdated: Date?
+    @Published private(set) var archiveVerificationStatus: ArchiveVerificationStatus = .idle
+    @Published private(set) var latestArchivedDate: String?
 
     private let client = CodexAppServerClient()
     private let usageStore: UsageStore?
@@ -53,9 +55,18 @@ final class DashboardViewModel: ObservableObject {
         }
     }
 
-    private func load() async {
+    func verifyArchive() {
+        Task { [weak self] in
+            await self?.load(verifyArchive: true)
+        }
+    }
+
+    private func load(verifyArchive: Bool = false) async {
         guard !isRefreshing else { return }
         isRefreshing = true
+        if verifyArchive {
+            archiveVerificationStatus = .verifying
+        }
         defer { isRefreshing = false }
 
         do {
@@ -65,18 +76,38 @@ final class DashboardViewModel: ObservableObject {
 
             if let usageStore {
                 let currentDay = DailyUsageBucket.utcDayKey(for: newSnapshot.fetchedAt)
-                let completedRemoteHistory = remoteHistory.filter { $0.startDate < currentDay }
-                let liveCurrentDayHistory = remoteHistory.filter { $0.startDate == currentDay }
+                var archivedHistory = try await usageStore.loadAll()
 
-                // The current UTC day is always shown directly from Codex. Only dates
-                // that have ended are retained as the local archive.
-                try await usageStore.merge(completedRemoteHistory)
-                let archivedHistory = try await usageStore.loadAll().filter {
-                    $0.startDate < currentDay
+                if verifyArchive {
+                    let repairs = UsageArchivePolicy.repairBuckets(
+                        archive: archivedHistory,
+                        codexHistory: remoteHistory,
+                        currentDay: currentDay
+                    )
+                    if !repairs.isEmpty {
+                        try await usageStore.merge(repairs)
+                        archivedHistory = try await usageStore.loadAll()
+                    }
+                    archiveVerificationStatus = .completed(
+                        checkedDays: UsageArchivePolicy.completedBuckets(
+                            from: remoteHistory,
+                            currentDay: currentDay
+                        ).count,
+                        repairedDays: repairs.count
+                    )
                 }
-                mergedHistory = (archivedHistory + liveCurrentDayHistory).sorted {
-                    $0.startDate < $1.startDate
-                }
+
+                latestArchivedDate = archivedHistory
+                    .filter { $0.startDate < currentDay }
+                    .map(\.startDate)
+                    .max()
+                mergedHistory = UsageArchivePolicy.displayedHistory(
+                    archive: archivedHistory,
+                    codexHistory: remoteHistory,
+                    currentDay: currentDay
+                )
+            } else if verifyArchive {
+                archiveVerificationStatus = .failed("本地归档不可用")
             }
 
             snapshot = newSnapshot
@@ -85,6 +116,9 @@ final class DashboardViewModel: ObservableObject {
             errorMessage = nil
         } catch {
             errorMessage = error.localizedDescription
+            if verifyArchive {
+                archiveVerificationStatus = .failed(error.localizedDescription)
+            }
         }
     }
 }

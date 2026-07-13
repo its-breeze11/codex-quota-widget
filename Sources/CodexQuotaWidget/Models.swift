@@ -114,6 +114,45 @@ struct DailyUsageBucket: Codable, Equatable, Identifiable {
     }()
 }
 
+enum UsageArchivePolicy {
+    static func completedBuckets(
+        from codexHistory: [DailyUsageBucket],
+        currentDay: String
+    ) -> [DailyUsageBucket] {
+        codexHistory.filter { $0.startDate < currentDay }
+    }
+
+    static func displayedHistory(
+        archive: [DailyUsageBucket],
+        codexHistory: [DailyUsageBucket],
+        currentDay: String
+    ) -> [DailyUsageBucket] {
+        let archivedDays = archive.filter { $0.startDate < currentDay }
+        let liveCurrentDay = codexHistory.filter { $0.startDate == currentDay }
+        return (archivedDays + liveCurrentDay).sorted { $0.startDate < $1.startDate }
+    }
+
+    static func repairBuckets(
+        archive: [DailyUsageBucket],
+        codexHistory: [DailyUsageBucket],
+        currentDay: String
+    ) -> [DailyUsageBucket] {
+        let archivedTokens = archive.reduce(into: [String: Int64]()) { values, bucket in
+            values[bucket.startDate] = bucket.tokens
+        }
+        return completedBuckets(from: codexHistory, currentDay: currentDay).filter {
+            archivedTokens[$0.startDate] != $0.tokens
+        }
+    }
+}
+
+enum ArchiveVerificationStatus: Equatable {
+    case idle
+    case verifying
+    case completed(checkedDays: Int, repairedDays: Int)
+    case failed(String)
+}
+
 struct TokenUsageResponse: Codable, Equatable {
     let summary: AccountTokenUsageSummary
     let dailyUsageBuckets: [DailyUsageBucket]?

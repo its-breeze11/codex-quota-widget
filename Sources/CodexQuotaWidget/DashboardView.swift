@@ -11,43 +11,27 @@ struct DashboardView: View {
 
             if let snapshot = viewModel.snapshot {
                 GeometryReader { geometry in
-                    if geometry.size.width >= 680 {
-                        HStack(alignment: .top, spacing: 14) {
-                            VStack(spacing: 14) {
-                                ForEach(snapshot.rateLimits.primaryDisplayBuckets) { bucket in
-                                    QuotaCard(bucket: bucket)
-                                        .frame(maxHeight: .infinity)
-                                }
-                                ResetCreditsCard(summary: snapshot.rateLimits.rateLimitResetCredits)
+                    HStack(alignment: .top, spacing: 14) {
+                        VStack(spacing: 14) {
+                            ForEach(snapshot.rateLimits.primaryDisplayBuckets) { bucket in
+                                QuotaCard(bucket: bucket)
                                     .frame(maxHeight: .infinity)
                             }
-                            .frame(width: min(max(geometry.size.width * 0.4, 280), 350))
-                            .frame(maxHeight: .infinity)
+                            ResetCreditsCard(summary: snapshot.rateLimits.rateLimitResetCredits)
+                                .frame(maxHeight: .infinity)
+                        }
+                        .frame(width: min(max(geometry.size.width * 0.4, 280), 350))
+                        .frame(maxHeight: .infinity)
 
-                            UsageHistoryCard(
-                                history: viewModel.history,
-                                summary: snapshot.usage.summary,
-                                chartHeight: max(120, geometry.size.height - 120)
-                            )
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        }
-                    } else {
-                        ScrollView {
-                            VStack(spacing: 14) {
-                                ForEach(snapshot.rateLimits.primaryDisplayBuckets) { bucket in
-                                    QuotaCard(bucket: bucket)
-                                        .frame(minHeight: 150)
-                                }
-                                ResetCreditsCard(summary: snapshot.rateLimits.rateLimitResetCredits)
-                                    .frame(minHeight: 170)
-                                UsageHistoryCard(
-                                    history: viewModel.history,
-                                    summary: snapshot.usage.summary,
-                                    chartHeight: 220
-                                )
-                                .frame(minHeight: 360)
-                            }
-                        }
+                        UsageHistoryCard(
+                            history: viewModel.history,
+                            summary: snapshot.usage.summary,
+                            chartHeight: max(82, geometry.size.height - 190),
+                            archiveStatus: viewModel.archiveVerificationStatus,
+                            latestArchivedDate: viewModel.latestArchivedDate,
+                            verifyArchive: viewModel.verifyArchive
+                        )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }
                 .padding(14)
@@ -78,11 +62,11 @@ struct DashboardView: View {
                 .padding(.bottom, 10)
         }
         .frame(
-            minWidth: 460,
-            idealWidth: 820,
+            minWidth: 620,
+            idealWidth: 650,
             maxWidth: .infinity,
-            minHeight: 360,
-            idealHeight: 420,
+            minHeight: 380,
+            idealHeight: 390,
             maxHeight: .infinity
         )
         .background(Color(nsColor: .windowBackgroundColor))
@@ -268,9 +252,13 @@ private struct UsageHistoryCard: View {
     let history: [DailyUsageBucket]
     let summary: AccountTokenUsageSummary
     let chartHeight: CGFloat
+    let archiveStatus: ArchiveVerificationStatus
+    let latestArchivedDate: String?
+    let verifyArchive: () -> Void
 
     @State private var range: HistoryRange = .month
     @State private var selectedDate: Date?
+    @State private var showsArchiveDetails = false
 
     private var visibleHistory: [DailyUsageBucket] {
         guard
@@ -298,20 +286,39 @@ private struct UsageHistoryCard: View {
         }
     }
 
+    private var visibleTokenTotal: Int64 {
+        visibleHistory.reduce(into: Int64.zero) { total, bucket in
+            total += bucket.tokens
+        }
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Label("每日 Token", systemImage: "chart.bar.xaxis")
-                    .font(.headline)
-                Spacer()
-                Picker("范围", selection: $range) {
-                    ForEach(HistoryRange.allCases) { item in
-                        Text(item.rawValue).tag(item)
+            ViewThatFits(in: .horizontal) {
+                HStack {
+                    title
+                    Spacer(minLength: 8)
+                    controls.fixedSize()
+                }
+
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        title
+                        Spacer()
+                        verifyButton
+                    }
+                    HStack {
+                        Spacer()
+                        rangePicker
                     }
                 }
-                .pickerStyle(.segmented)
-                .frame(width: 172)
             }
+
+            ArchiveVerificationBanner(
+                status: archiveStatus,
+                latestArchivedDate: latestArchivedDate,
+                showDetails: { showsArchiveDetails = true }
+            )
 
             if let selectedBucket {
                 HStack {
@@ -386,8 +393,8 @@ private struct UsageHistoryCard: View {
             }
 
             HStack {
-                if let lifetime = summary.lifetimeTokens {
-                    Label("累计 \(lifetime.millionTokenCount)", systemImage: "sum")
+                if !visibleHistory.isEmpty {
+                    Label("\(range.rawValue) 累计 \(visibleTokenTotal.millionTokenCount)", systemImage: "sum")
                 }
                 Spacer()
                 if let streak = summary.currentStreakDays {
@@ -398,6 +405,168 @@ private struct UsageHistoryCard: View {
             .foregroundStyle(.secondary)
         }
         .cardStyle()
+        .sheet(isPresented: $showsArchiveDetails) {
+            ArchiveVerificationDetailSheet(
+                status: archiveStatus,
+                latestArchivedDate: latestArchivedDate
+            )
+        }
+    }
+
+    private var title: some View {
+        Label("每日 Token", systemImage: "chart.bar.xaxis")
+            .font(.headline)
+            .fixedSize(horizontal: true, vertical: false)
+    }
+
+    private var controls: some View {
+        HStack(spacing: 8) {
+            verifyButton
+            rangePicker
+        }
+    }
+
+    private var verifyButton: some View {
+        Button(action: verifyArchive) {
+            Label("核验归档", systemImage: "arrow.triangle.2.circlepath")
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .disabled(archiveStatus == .verifying)
+    }
+
+    private var rangePicker: some View {
+        Picker("范围", selection: $range) {
+            ForEach(HistoryRange.allCases) { item in
+                Text(item.rawValue).tag(item)
+            }
+        }
+        .labelsHidden()
+        .pickerStyle(.segmented)
+        .frame(width: 160)
+    }
+}
+
+private struct ArchiveVerificationBanner: View {
+    let status: ArchiveVerificationStatus
+    let latestArchivedDate: String?
+    let showDetails: () -> Void
+
+    var body: some View {
+        Button(action: showDetails) {
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 5) {
+                    statusIcon
+                    Text(statusTitle)
+                        .foregroundStyle(statusColor)
+                        .lineLimit(1)
+                    Spacer(minLength: 4)
+                    Label("查看详情", systemImage: "chevron.right")
+                        .labelStyle(.titleAndIcon)
+                        .foregroundStyle(.secondary)
+                }
+                .font(.caption.weight(.medium))
+
+                Text("当天仅读取 Codex 实时数据，不参与归档")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 6)
+        .background(.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func completedTitle(checkedDays: Int, repairedDays: Int) -> String {
+        let latest = latestArchivedDate ?? "无"
+        if repairedDays == 0 {
+            return "已核验完成 · 最新归档：\(latest)"
+        }
+        return "已修复 \(repairedDays) 天 · 最新归档：\(latest)"
+    }
+
+    private var statusTitle: String {
+        switch status {
+        case .idle:
+            return latestArchivedDate.map { "最新归档：\($0)" } ?? "尚无历史归档"
+        case .verifying:
+            return "正在核验 Codex 可查历史…"
+        case .completed(let checkedDays, let repairedDays):
+            return completedTitle(checkedDays: checkedDays, repairedDays: repairedDays)
+        case .failed(let message):
+            return "核验失败：\(message)"
+        }
+    }
+
+    @ViewBuilder private var statusIcon: some View {
+        switch status {
+        case .idle:
+            Image(systemName: "archivebox")
+        case .verifying:
+            ProgressView().controlSize(.mini)
+        case .completed:
+            Image(systemName: "checkmark.circle.fill")
+        case .failed:
+            Image(systemName: "exclamationmark.triangle.fill")
+        }
+    }
+
+    private var statusColor: Color {
+        switch status {
+        case .completed: return .green
+        case .failed: return .orange
+        case .idle, .verifying: return .secondary
+        }
+    }
+}
+
+private struct ArchiveVerificationDetailSheet: View {
+    let status: ArchiveVerificationStatus
+    let latestArchivedDate: String?
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            HStack {
+                Label("归档核验详情", systemImage: "checkmark.shield")
+                    .font(.title3.weight(.semibold))
+                Spacer()
+                Button("完成") { dismiss() }
+            }
+
+            DetailRow(title: "核验范围", value: "Codex 当前可查询的全部已结束日期")
+            DetailRow(title: "最新归档", value: latestArchivedDate ?? "尚无")
+            DetailRow(title: "当日数据", value: "仅实时读取，不写入归档")
+
+            switch status {
+            case .idle:
+                Text("点击“核验归档”后会全量比较本地归档和 Codex 历史，仅补齐或改正不一致的日期；不会删除本地已有记录。")
+            case .verifying:
+                Text("正在读取并比对 Codex 可查历史，请稍候。")
+            case .completed(let checkedDays, let repairedDays):
+                DetailRow(title: "本次核验", value: "已检查 \(checkedDays) 天，修复 \(repairedDays) 天")
+            case .failed(let message):
+                DetailRow(title: "本次结果", value: "失败：\(message)")
+            }
+
+            Spacer()
+        }
+        .padding(20)
+        .frame(width: 390, height: 300)
+    }
+}
+
+private struct DetailRow: View {
+    let title: String
+    let value: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title).font(.caption).foregroundStyle(.secondary)
+            Text(value).font(.body)
+        }
     }
 }
 

@@ -63,4 +63,36 @@ final class ModelTests: XCTestCase {
             "1970-01-01"
         )
     }
+
+    func testArchivePolicyUsesOnlyLiveCurrentDayAndFindsRepairs() {
+        let archive = [
+            DailyUsageBucket(startDate: "2026-07-11", tokens: 10),
+            DailyUsageBucket(startDate: "2026-07-13", tokens: 999)
+        ]
+        let codexHistory = [
+            DailyUsageBucket(startDate: "2026-07-11", tokens: 11),
+            DailyUsageBucket(startDate: "2026-07-12", tokens: 12),
+            DailyUsageBucket(startDate: "2026-07-13", tokens: 13)
+        ]
+
+        XCTAssertEqual(
+            UsageArchivePolicy.repairBuckets(
+                archive: archive,
+                codexHistory: codexHistory,
+                currentDay: "2026-07-13"
+            ).map(\.startDate),
+            ["2026-07-11", "2026-07-12"]
+        )
+        XCTAssertEqual(
+            UsageArchivePolicy.displayedHistory(
+                archive: archive,
+                codexHistory: codexHistory,
+                currentDay: "2026-07-13"
+            ),
+            [
+                DailyUsageBucket(startDate: "2026-07-11", tokens: 10),
+                DailyUsageBucket(startDate: "2026-07-13", tokens: 13)
+            ]
+        )
+    }
 }
