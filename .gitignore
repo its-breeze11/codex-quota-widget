@@ -1,0 +1,6 @@
+.build/
+.swiftpm/
+dist/
+.idea/
+.obsidian/
+.DS_Store
