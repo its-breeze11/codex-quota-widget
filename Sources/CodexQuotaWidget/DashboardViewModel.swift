@@ -126,7 +126,9 @@ final class DashboardViewModel: ObservableObject {
             lastUpdated = newSnapshot.fetchedAt
             errorMessage = nil
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = snapshot == nil
+                ? error.localizedDescription
+                : "暂时无法刷新，仍展示上次成功数据。"
             if verifyArchive {
                 archiveVerificationStatus = .failed(error.localizedDescription)
             }

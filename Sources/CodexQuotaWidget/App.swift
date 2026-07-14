@@ -18,24 +18,33 @@ final class FloatingPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
+final class PanelPresentation: ObservableObject {
+    @Published var isExpanded = false
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     // Bump the autosave key so the compact default takes effect once before
     // subsequent manual resizing is remembered.
-    private static let panelFrameName = "CodexQuotaWidgetPanel-v11"
-    private static let panelSize = NSSize(width: 760, height: 350)
+    private static let panelFrameName = "CodexQuotaWidgetPanel-v12"
+    private static let collapsedPanelSize = NSSize(width: 360, height: 350)
+    private static let expandedPanelSize = NSSize(width: 720, height: 350)
     // This dashboard is designed as a two-column surface. Keep enough room for
     // the history chart and its footer instead of falling back to a vertically
     // scrolling layout or allowing the app footer to overlap card content.
-    private static let panelMinimumSize = NSSize(width: 720, height: 350)
+    private static let collapsedMinimumSize = NSSize(width: 360, height: 350)
+    private static let expandedMinimumSize = NSSize(width: 720, height: 350)
 
     private let viewModel = DashboardViewModel()
+    private let presentation = PanelPresentation()
     private var panel: FloatingPanel?
     private var statusItem: NSStatusItem?
     private var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory)
+        // Keep a Dock presence so the yellow traffic light can use the normal
+        // macOS miniaturize behavior and remain discoverable after minimizing.
+        NSApp.setActivationPolicy(.regular)
         configurePanel()
         configureStatusItem()
         observeViewModel()
@@ -47,15 +56,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel?.saveFrame(usingName: Self.panelFrameName)
     }
 
+    func applicationShouldHandleReopen(
+        _ sender: NSApplication,
+        hasVisibleWindows flag: Bool
+    ) -> Bool {
+        showPanel()
+        return true
+    }
+
     private func configurePanel() {
         let panel = FloatingPanel(
-            contentRect: NSRect(origin: .zero, size: Self.panelSize),
-            styleMask: [.borderless, .nonactivatingPanel, .resizable],
+            contentRect: NSRect(origin: .zero, size: Self.collapsedPanelSize),
+            styleMask: [.borderless, .nonactivatingPanel, .resizable, .miniaturizable],
             backing: .buffered,
             defer: false
         )
-        panel.minSize = Self.panelMinimumSize
-        panel.contentMinSize = Self.panelMinimumSize
+        panel.minSize = Self.collapsedMinimumSize
+        panel.contentMinSize = Self.collapsedMinimumSize
         panel.level = .floating
         panel.isOpaque = false
         panel.backgroundColor = .clear
@@ -64,7 +81,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.contentView = NSHostingView(rootView: DashboardView(viewModel: viewModel))
+        panel.contentView = NSHostingView(
+            rootView: DashboardView(
+                viewModel: viewModel,
+                presentation: presentation,
+                togglePresentation: { [weak self] in self?.togglePresentation() }
+            )
+        )
         panel.setFrameAutosaveName(Self.panelFrameName)
 
         if !panel.setFrameUsingName(Self.panelFrameName),
@@ -78,6 +101,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         self.panel = panel
+    }
+
+    private func togglePresentation() {
+        guard let panel else { return }
+        let expands = !presentation.isExpanded
+        let targetSize = expands ? Self.expandedPanelSize : Self.collapsedPanelSize
+        let targetMinimumSize = expands ? Self.expandedMinimumSize : Self.collapsedMinimumSize
+
+        panel.minSize = targetMinimumSize
+        panel.contentMinSize = targetMinimumSize
+        presentation.isExpanded = expands
+
+        var frame = panel.frame
+        frame.size = targetSize
+
+        // Animating both NSPanel's frame and SwiftUI's conditional right column
+        // causes a visible second layout bounce while collapsing. Apply one
+        // atomic resize instead.
+        panel.setFrame(frame, display: true, animate: false)
     }
 
     private func configureStatusItem() {
@@ -106,7 +148,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func statusItemClicked() {
         if NSApp.currentEvent?.type == .rightMouseUp {
             showStatusMenu()
-        } else if panel?.isVisible == true {
+        } else if panel?.isVisible == true, panel?.isMiniaturized == false {
             panel?.orderOut(nil)
         } else {
             showPanel()
@@ -118,7 +160,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func showPanel() {
-        panel?.orderFrontRegardless()
+        guard let panel else { return }
+        if panel.isMiniaturized {
+            panel.deminiaturize(nil)
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        panel.makeKeyAndOrderFront(nil)
     }
 
     @objc private func quit() {

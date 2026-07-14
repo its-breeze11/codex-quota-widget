@@ -18,8 +18,8 @@ enum CodexClientError: LocalizedError {
             return "Codex App Server 在返回数据前关闭了连接。"
         case .requestTimedOut:
             return "读取 Codex 额度超时。"
-        case .server(let message):
-            return "Codex 返回错误：\(message)"
+        case .server:
+            return "Codex 账户信息暂时不可用，请稍后重试。"
         case .malformedResponse:
             return "Codex 返回了无法识别的数据。"
         }
@@ -29,8 +29,20 @@ enum CodexClientError: LocalizedError {
 struct CodexAppServerClient {
     func fetchSnapshot() async throws -> DashboardSnapshot {
         try await Task.detached(priority: .utility) {
-            try Self.fetchBlocking()
+            try Self.fetchWithRetry()
         }.value
+    }
+
+    private static func fetchWithRetry() throws -> DashboardSnapshot {
+        do {
+            return try fetchBlocking()
+        } catch CodexClientError.server {
+            // The App Server occasionally returns a transient profile-read
+            // failure while its ChatGPT session is refreshing. Retry once
+            // before surfacing a stale-data warning to the widget.
+            Thread.sleep(forTimeInterval: 1)
+            return try fetchBlocking()
+        }
     }
 
     private static func fetchBlocking() throws -> DashboardSnapshot {

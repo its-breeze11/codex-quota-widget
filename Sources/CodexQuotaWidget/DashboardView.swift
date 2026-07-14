@@ -3,6 +3,8 @@ import SwiftUI
 
 struct DashboardView: View {
     @ObservedObject var viewModel: DashboardViewModel
+    @ObservedObject var presentation: PanelPresentation
+    let togglePresentation: () -> Void
 
     var body: some View {
         VStack(spacing: 0) {
@@ -11,28 +13,35 @@ struct DashboardView: View {
 
             if let snapshot = viewModel.snapshot {
                 GeometryReader { geometry in
-                    HStack(alignment: .top, spacing: 14) {
-                        VStack(spacing: 14) {
-                            ForEach(snapshot.rateLimits.primaryDisplayBuckets) { bucket in
-                                QuotaCard(bucket: bucket)
-                                    .frame(maxHeight: .infinity)
-                            }
-                            ResetCreditsCard(summary: snapshot.rateLimits.rateLimitResetCredits)
-                                .frame(maxHeight: .infinity)
-                        }
-                        .frame(width: min(max(geometry.size.width * 0.4, 280), 350))
-                        .frame(maxHeight: .infinity)
+                    let leftWidth = presentation.isExpanded
+                        ? min(max(geometry.size.width * 0.4, 280), 350)
+                        : geometry.size.width
 
-                        UsageHistoryCard(
-                            history: viewModel.history,
-                            todayLocalTokens: viewModel.todayLocalTokens,
-                            summary: snapshot.usage.summary,
-                            chartHeight: max(80, geometry.size.height - 205),
-                            archiveStatus: viewModel.archiveVerificationStatus,
-                            latestArchivedDate: viewModel.latestArchivedDate,
-                            verifyArchive: viewModel.verifyArchive
-                        )
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    ZStack(alignment: .topLeading) {
+                        HStack(alignment: .top, spacing: 14) {
+                            quotaColumn(snapshot: snapshot)
+                                .frame(width: leftWidth)
+                                .frame(maxHeight: .infinity)
+
+                            if presentation.isExpanded {
+                                UsageHistoryCard(
+                                    history: viewModel.history,
+                                    todayLocalTokens: viewModel.todayLocalTokens,
+                                    summary: snapshot.usage.summary,
+                                    chartHeight: max(80, geometry.size.height - 205),
+                                    archiveStatus: viewModel.archiveVerificationStatus,
+                                    latestArchivedDate: viewModel.latestArchivedDate,
+                                    verifyArchive: viewModel.verifyArchive
+                                )
+                                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                            }
+                        }
+
+                        presentationToggle
+                            .position(
+                                x: presentation.isExpanded ? leftWidth + 7 : geometry.size.width - 13,
+                                y: geometry.size.height / 2
+                            )
                     }
                 }
                 .padding(14)
@@ -63,8 +72,8 @@ struct DashboardView: View {
                 .padding(.bottom, 6)
         }
         .frame(
-            minWidth: 720,
-            idealWidth: 760,
+            minWidth: presentation.isExpanded ? 720 : 360,
+            idealWidth: presentation.isExpanded ? 720 : 360,
             maxWidth: .infinity,
             minHeight: 350,
             idealHeight: 350,
@@ -80,8 +89,31 @@ struct DashboardView: View {
         .environment(\.controlActiveState, .inactive)
     }
 
+    private func quotaColumn(snapshot: DashboardSnapshot) -> some View {
+        VStack(spacing: 14) {
+            ForEach(snapshot.rateLimits.primaryDisplayBuckets) { bucket in
+                QuotaCard(bucket: bucket)
+                    .frame(maxHeight: .infinity)
+            }
+            ResetCreditsCard(summary: snapshot.rateLimits.rateLimitResetCredits)
+                .frame(maxHeight: .infinity)
+        }
+    }
+
+    private var presentationToggle: some View {
+        Button(action: togglePresentation) {
+            Text(presentation.isExpanded ? "<<" : ">>")
+                .font(.system(size: 11, weight: .medium, design: .rounded))
+                .foregroundStyle(UsagePalette.blue.opacity(0.82))
+                .frame(width: 20, height: 20)
+        }
+        .buttonStyle(.plain)
+        .help(presentation.isExpanded ? "收起图表" : "展开图表")
+    }
+
     private var header: some View {
         HStack(spacing: 10) {
+            WindowTrafficLights()
             Image(systemName: "terminal.fill")
                 .foregroundStyle(.tint)
             VStack(alignment: .leading, spacing: 1) {
@@ -109,19 +141,62 @@ struct DashboardView: View {
     }
 
     private var footer: some View {
-        HStack {
+        HStack(spacing: 12) {
+            Spacer(minLength: 0)
             if let date = viewModel.lastUpdated {
                 Text("更新于 \(date.formatted(date: .omitted, time: .shortened))")
             } else {
                 Text("每 60 秒自动刷新")
             }
-            Spacer()
             Button("退出") { NSApplication.shared.terminate(nil) }
                 .buttonStyle(.plain)
         }
         .font(.caption2)
         .foregroundStyle(.tertiary)
         .padding(.horizontal, 2)
+    }
+}
+
+private struct WindowTrafficLights: View {
+    var body: some View {
+        HStack(spacing: 7) {
+            trafficLight(color: .red, symbol: "xmark", help: "关闭窗口") {
+                widgetPanel?.orderOut(nil)
+            }
+            trafficLight(color: .yellow, symbol: "minus", help: "最小化到 Dock") {
+                widgetPanel?.miniaturize(nil)
+            }
+            trafficLight(color: .green, symbol: "plus", help: "缩放窗口") {
+                widgetPanel?.zoom(nil)
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("窗口控制")
+    }
+
+    private var widgetPanel: NSWindow? {
+        NSApp.windows.first { $0 is FloatingPanel }
+    }
+
+    private func trafficLight(
+        color: Color,
+        symbol: String,
+        help: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Circle()
+                .fill(color)
+                .frame(width: 12, height: 12)
+                .overlay {
+                    Image(systemName: symbol)
+                        .font(.system(size: 6, weight: .bold))
+                        .foregroundStyle(.black.opacity(0.58))
+                }
+        }
+        .buttonStyle(.plain)
+        .help(help)
+        .accessibilityLabel(help)
     }
 }
 
@@ -187,13 +262,17 @@ private struct ResetCreditsCard: View {
             HStack {
                 Label("额度重置", systemImage: "arrow.counterclockwise.circle.fill")
                     .font(.headline)
+                Text("（仅展示近 3 次）")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
                 Spacer()
                 Text("可用 \(summary?.availableCount ?? 0) 次")
                     .font(.subheadline.weight(.semibold))
             }
 
             if let credits = summary?.credits, !credits.isEmpty {
-                ForEach(credits.sorted(by: expiresSooner)) { credit in
+                let visibleCredits = Array(credits.sorted(by: expiresSooner).prefix(3))
+                ForEach(visibleCredits) { credit in
                     HStack {
                         Circle()
                             .fill(.green)
@@ -213,11 +292,6 @@ private struct ResetCreditsCard: View {
                     }
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                }
-                if let summary, summary.availableCount > credits.count {
-                    Text("另有 \(summary.availableCount - credits.count) 次重置未返回到期明细")
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
                 }
             } else {
                 Text(summary == nil ? "服务端未提供重置券信息" : "当前没有可用重置券")
