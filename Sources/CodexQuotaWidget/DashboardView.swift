@@ -45,6 +45,9 @@ struct DashboardView: View {
                     }
                 }
                 .padding(14)
+            } else if viewModel.isInstallingCLI {
+                ProgressView("正在安装 Codex CLI…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if viewModel.isRefreshing {
                 ProgressView("正在读取 Codex 数据…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -84,6 +87,14 @@ struct DashboardView: View {
         .overlay {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .strokeBorder(.white.opacity(0.18), lineWidth: 1)
+        }
+        .alert("未检测到 Codex CLI", isPresented: $viewModel.isCLIInstallPromptVisible) {
+            Button("暂不安装", role: .cancel) {}
+            Button("安装 CLI") {
+                viewModel.installCLI()
+            }
+        } message: {
+            Text("此工具需要本机 Codex CLI 才能读取用量。确认后会通过 npm 安装到 ~/.local，不需要管理员权限。安装完成后仍需由你在终端运行 codex login 登录账户。")
         }
         // Keep the panel visually identical whether it currently has keyboard focus or not.
         .environment(\.controlActiveState, .inactive)
@@ -240,8 +251,10 @@ private struct QuotaCard: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
-                ProgressView(value: Double(window.usedPercent), total: 100)
-                    .tint(progressColor(for: window.remainingPercent))
+                QuotaProgressBar(
+                    usedPercent: window.usedPercent,
+                    color: progressColor(for: window.remainingPercent)
+                )
             }
         }
         .cardStyle()
@@ -251,6 +264,30 @@ private struct QuotaCard: View {
         if remaining <= 10 { return .red }
         if remaining <= 30 { return .orange }
         return Color(nsColor: .systemGray)
+    }
+}
+
+private struct QuotaProgressBar: View {
+    let usedPercent: Int
+    let color: Color
+
+    private var progress: CGFloat {
+        min(max(CGFloat(usedPercent) / 100, 0), 1)
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color(nsColor: .separatorColor).opacity(0.32))
+                Capsule()
+                    .fill(color)
+                    .frame(width: geometry.size.width * progress)
+            }
+        }
+        .frame(height: 7)
+        .accessibilityLabel("额度已使用 \(usedPercent)%")
+        .accessibilityValue("\(usedPercent)%")
     }
 }
 

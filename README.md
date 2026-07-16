@@ -24,7 +24,9 @@
 ## 环境要求
 
 - macOS 13 或更高版本
-- 已安装并登录 Codex CLI
+- 如果尚未安装 Codex CLI，应用会提示确认，并通过本机 npm 安装到 `~/.local`（无需管理员权限）
+- 安装后需要在终端运行一次 `codex login` 完成账户登录
+- 自动安装依赖本机已有 Node/npm；缺少时应用会提示先安装 Node.js
 - 匹配的 Swift 工具链和 macOS SDK；推荐完整 Xcode
 
 ## 构建

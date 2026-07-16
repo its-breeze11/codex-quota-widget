@@ -2,6 +2,8 @@ import Foundation
 
 enum CodexClientError: LocalizedError {
     case executableNotFound
+    case installerNotAvailable
+    case installationFailed(Int32)
     case launchFailed(String)
     case connectionClosed
     case requestTimedOut
@@ -11,7 +13,11 @@ enum CodexClientError: LocalizedError {
     var errorDescription: String? {
         switch self {
         case .executableNotFound:
-            return "未找到 Codex CLI。请先安装 Codex，或确认 ~/.local/bin/codex 存在。"
+            return "未检测到 Codex CLI。"
+        case .installerNotAvailable:
+            return "未找到 Node/npm，无法自动安装 Codex CLI。请先安装 Node.js 后重试。"
+        case .installationFailed(let status):
+            return "Codex CLI 安装失败（退出码 \(status)）。请检查网络后重试。"
         case .launchFailed(let message):
             return "无法启动 Codex App Server：\(message)"
         case .connectionClosed:
@@ -30,6 +36,41 @@ struct CodexAppServerClient {
     func fetchSnapshot() async throws -> DashboardSnapshot {
         try await Task.detached(priority: .utility) {
             try Self.fetchWithRetry()
+        }.value
+    }
+
+    /// Installs the CLI into the current user's home directory. This deliberately
+    /// avoids `sudo` and never changes a system-wide Node installation.
+    func installCLI() async throws {
+        try await Task.detached(priority: .utility) {
+            let npmURL = try Self.locateExecutable(named: "npm")
+            let home = FileManager.default.homeDirectoryForCurrentUser
+            let process = Process()
+            process.executableURL = npmURL
+            process.arguments = [
+                "install",
+                "--global",
+                "--prefix", home.appendingPathComponent(".local").path,
+                "@openai/codex@latest"
+            ]
+            // npm can emit a large progress log. It is intentionally discarded so
+            // its pipe cannot block the installation process.
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+
+            do {
+                try process.run()
+            } catch {
+                throw CodexClientError.installerNotAvailable
+            }
+            process.waitUntilExit()
+
+            guard process.terminationStatus == 0 else {
+                throw CodexClientError.installationFailed(process.terminationStatus)
+            }
+            guard (try? Self.locateCodexExecutable()) != nil else {
+                throw CodexClientError.installationFailed(process.terminationStatus)
+            }
         }.value
     }
 
@@ -153,26 +194,46 @@ struct CodexAppServerClient {
     }
 
     private static func locateCodexExecutable() throws -> URL {
+        do {
+            return try locateExecutable(named: "codex")
+        } catch {
+            throw CodexClientError.executableNotFound
+        }
+    }
+
+    private static func locateExecutable(named name: String) throws -> URL {
         let home = FileManager.default.homeDirectoryForCurrentUser
-        var candidates = [
-            home.appendingPathComponent(".local/bin/codex"),
-            URL(fileURLWithPath: "/opt/homebrew/bin/codex"),
-            URL(fileURLWithPath: "/usr/local/bin/codex")
+        var directories = [
+            home.appendingPathComponent(".local/bin"),
+            home.appendingPathComponent(".local/bin/node/bin"),
+            home.appendingPathComponent(".npm-global/bin"),
+            home.appendingPathComponent(".volta/bin"),
+            home.appendingPathComponent(".codex/bin"),
+            home.appendingPathComponent(".codex/packages/standalone/current/bin"),
+            URL(fileURLWithPath: "/opt/homebrew/bin"),
+            URL(fileURLWithPath: "/usr/local/bin")
         ]
 
+        if let nodeVersions = try? FileManager.default.contentsOfDirectory(
+            at: home.appendingPathComponent(".nvm/versions/node"),
+            includingPropertiesForKeys: nil
+        ) {
+            directories.append(contentsOf: nodeVersions.map { $0.appendingPathComponent("bin") })
+        }
+
         if let path = ProcessInfo.processInfo.environment["PATH"] {
-            candidates.append(contentsOf: path.split(separator: ":").map {
-                URL(fileURLWithPath: String($0)).appendingPathComponent("codex")
+            directories.append(contentsOf: path.split(separator: ":").map {
+                URL(fileURLWithPath: String($0))
             })
         }
 
-        if let executable = candidates.first(where: {
-            FileManager.default.isExecutableFile(atPath: $0.path)
-        }) {
+        if let executable = directories
+            .map({ $0.appendingPathComponent(name) })
+            .first(where: { FileManager.default.isExecutableFile(atPath: $0.path) }) {
             return executable
         }
 
-        throw CodexClientError.executableNotFound
+        throw CodexClientError.installerNotAvailable
     }
 }
 

@@ -11,10 +11,13 @@ final class DashboardViewModel: ObservableObject {
     @Published private(set) var lastUpdated: Date?
     @Published private(set) var archiveVerificationStatus: ArchiveVerificationStatus = .idle
     @Published private(set) var latestArchivedDate: String?
+    @Published var isCLIInstallPromptVisible = false
+    @Published private(set) var isInstallingCLI = false
 
     private let client = CodexAppServerClient()
     private let usageStore: UsageStore?
     private var refreshLoop: Task<Void, Never>?
+    private var hasPromptedForCLIInstallation = false
 
     init() {
         do {
@@ -59,6 +62,23 @@ final class DashboardViewModel: ObservableObject {
     func verifyArchive() {
         Task { [weak self] in
             await self?.load(verifyArchive: true)
+        }
+    }
+
+    func installCLI() {
+        guard !isInstallingCLI else { return }
+        Task { [weak self] in
+            guard let self else { return }
+            self.isInstallingCLI = true
+            self.errorMessage = nil
+            defer { self.isInstallingCLI = false }
+
+            do {
+                try await self.client.installCLI()
+                self.errorMessage = "Codex CLI 已安装。请在终端运行 codex login 完成登录，然后点击刷新。"
+            } catch {
+                self.errorMessage = error.localizedDescription
+            }
         }
     }
 
@@ -126,9 +146,17 @@ final class DashboardViewModel: ObservableObject {
             lastUpdated = newSnapshot.fetchedAt
             errorMessage = nil
         } catch {
-            errorMessage = snapshot == nil
-                ? error.localizedDescription
-                : "暂时无法刷新，仍展示上次成功数据。"
+            if case CodexClientError.executableNotFound = error, snapshot == nil {
+                errorMessage = nil
+                if !hasPromptedForCLIInstallation {
+                    hasPromptedForCLIInstallation = true
+                    isCLIInstallPromptVisible = true
+                }
+            } else {
+                errorMessage = snapshot == nil
+                    ? error.localizedDescription
+                    : "暂时无法刷新，仍展示上次成功数据。"
+            }
             if verifyArchive {
                 archiveVerificationStatus = .failed(error.localizedDescription)
             }
