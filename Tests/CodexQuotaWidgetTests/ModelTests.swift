@@ -64,6 +64,29 @@ final class ModelTests: XCTestCase {
         )
     }
 
+    func testRollingUsageWindowsUseTheSameDatesAndTotalsAsTheDashboard() {
+        let history = [
+            DailyUsageBucket(startDate: "2026-06-17", tokens: 17),
+            DailyUsageBucket(startDate: "2026-07-09", tokens: 9),
+            DailyUsageBucket(startDate: "2026-07-10", tokens: 10),
+            DailyUsageBucket(startDate: "2026-07-11", tokens: 11),
+            DailyUsageBucket(startDate: "2026-07-13", tokens: 13),
+            DailyUsageBucket(startDate: "2026-07-16", tokens: 16)
+        ]
+
+        let sevenDay = UsageRollingWindow.calculate(days: 7, from: history)
+        XCTAssertEqual(sevenDay.startDate, "2026-07-10")
+        XCTAssertEqual(sevenDay.endDate, "2026-07-16")
+        XCTAssertEqual(sevenDay.buckets.map(\.startDate), ["2026-07-10", "2026-07-11", "2026-07-13", "2026-07-16"])
+        XCTAssertEqual(sevenDay.totalTokens, 50)
+
+        let thirtyDay = UsageRollingWindow.calculate(days: 30, from: history)
+        XCTAssertEqual(thirtyDay.startDate, "2026-06-17")
+        XCTAssertEqual(thirtyDay.endDate, "2026-07-16")
+        XCTAssertEqual(thirtyDay.buckets.map(\.startDate), history.map(\.startDate))
+        XCTAssertEqual(thirtyDay.totalTokens, 76)
+    }
+
     func testArchivePolicyUsesOnlyLiveCurrentDayAndFindsRepairs() {
         let archive = [
             DailyUsageBucket(startDate: "2026-07-11", tokens: 10),

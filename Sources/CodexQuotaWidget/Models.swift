@@ -114,6 +114,52 @@ struct DailyUsageBucket: Codable, Equatable, Identifiable {
     }()
 }
 
+struct UsageWindowCalculation: Equatable {
+    let dayCount: Int
+    let startDate: String?
+    let endDate: String?
+    let buckets: [DailyUsageBucket]
+
+    var totalTokens: Int64 {
+        buckets.reduce(into: Int64.zero) { $0 += $1.tokens }
+    }
+}
+
+enum UsageRollingWindow {
+    static func calculate(days: Int, from history: [DailyUsageBucket]) -> UsageWindowCalculation {
+        guard
+            days > 0,
+            let latestDate = history.compactMap(\.date).max(),
+            let lowerBound = Calendar(identifier: .gregorian).date(
+                byAdding: .day,
+                value: -(days - 1),
+                to: latestDate
+            )
+        else {
+            return UsageWindowCalculation(
+                dayCount: days,
+                startDate: nil,
+                endDate: nil,
+                buckets: []
+            )
+        }
+
+        let buckets = history
+            .filter { bucket in
+                guard let date = bucket.date else { return false }
+                return date >= lowerBound && date <= latestDate
+            }
+            .sorted { $0.startDate < $1.startDate }
+
+        return UsageWindowCalculation(
+            dayCount: days,
+            startDate: DailyUsageBucket.utcDayKey(for: lowerBound),
+            endDate: DailyUsageBucket.utcDayKey(for: latestDate),
+            buckets: buckets
+        )
+    }
+}
+
 enum UsageArchivePolicy {
     static func completedBuckets(
         from codexHistory: [DailyUsageBucket],

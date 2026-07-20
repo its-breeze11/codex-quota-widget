@@ -28,7 +28,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // subsequent manual resizing is remembered.
     private static let panelFrameName = "CodexQuotaWidgetPanel-v12"
     private static let collapsedPanelSize = NSSize(width: 360, height: 350)
-    private static let expandedPanelSize = NSSize(width: 720, height: 350)
+    private static let presentationWidthDelta: CGFloat = 360
     // This dashboard is designed as a two-column surface. Keep enough room for
     // the history chart and its footer instead of falling back to a vertically
     // scrolling layout or allowing the app footer to overlap card content.
@@ -106,15 +106,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func togglePresentation() {
         guard let panel else { return }
         let expands = !presentation.isExpanded
-        let targetSize = expands ? Self.expandedPanelSize : Self.collapsedPanelSize
         let targetMinimumSize = expands ? Self.expandedMinimumSize : Self.collapsedMinimumSize
+
+        var frame = panel.frame
+        // Keep the user's manual height and extra width. Expanding only adds the
+        // right-hand history column; collapsing removes that same width again,
+        // while the left edge remains fixed.
+        frame.size.width = expands
+            ? max(frame.size.width + Self.presentationWidthDelta, Self.expandedMinimumSize.width)
+            : max(frame.size.width - Self.presentationWidthDelta, Self.collapsedMinimumSize.width)
 
         panel.minSize = targetMinimumSize
         panel.contentMinSize = targetMinimumSize
         presentation.isExpanded = expands
-
-        var frame = panel.frame
-        frame.size = targetSize
 
         // Animating both NSPanel's frame and SwiftUI's conditional right column
         // causes a visible second layout bounce while collapsing. Apply one

@@ -2,6 +2,24 @@
 
 一个只在本机运行的 macOS 菜单栏与桌面悬浮工具，用于查看 Codex 当前额度窗口、可用重置次数和每日 Token 历史。
 
+## 界面
+
+| 收起态 | 展开态 |
+| --- | --- |
+| ![收起态：额度与重置次数](assets/dashboard-collapsed.png) | ![展开态：额度、重置、消耗趋势与核验](assets/dashboard-expanded.png) |
+
+### 展开态：30 天范围
+
+![展开态：30 天 Token 消耗趋势](assets/dashboard-expanded-30d.png)
+
+### 展开态：全部范围
+
+![展开态：全部 Token 消耗趋势](assets/dashboard-expanded-all.png)
+
+### 消耗计算详情
+
+![7d 与 30d 消耗的逐日计算明细](assets/usage-calculation-details.png)
+
 ## 能力
 
 - 展示 Codex 主额度的剩余百分比和重置倒计时，不展示模型专属额度桶。

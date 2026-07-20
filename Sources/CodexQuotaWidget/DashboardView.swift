@@ -30,7 +30,6 @@ struct DashboardView: View {
                                     summary: snapshot.usage.summary,
                                     chartHeight: max(80, geometry.size.height - 205),
                                     archiveStatus: viewModel.archiveVerificationStatus,
-                                    latestArchivedDate: viewModel.latestArchivedDate,
                                     verifyArchive: viewModel.verifyArchive
                                 )
                                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -365,15 +364,28 @@ private struct UsageHistoryCard: View {
     let summary: AccountTokenUsageSummary
     let chartHeight: CGFloat
     let archiveStatus: ArchiveVerificationStatus
-    let latestArchivedDate: String?
     let verifyArchive: () -> Void
 
     @State private var range: HistoryRange = .week
     @State private var visibleHistory: [DailyUsageBucket] = []
-    @State private var sevenDayTokens: Int64?
-    @State private var thirtyDayTokens: Int64?
     @State private var selectedBucketID: String?
-    @State private var showsArchiveDetails = false
+    @State private var showsUsageDetails = false
+
+    private var sevenDayCalculation: UsageWindowCalculation {
+        UsageRollingWindow.calculate(days: 7, from: history)
+    }
+
+    private var thirtyDayCalculation: UsageWindowCalculation {
+        UsageRollingWindow.calculate(days: 30, from: history)
+    }
+
+    private var sevenDayTotal: Int64? {
+        sevenDayCalculation.endDate == nil ? nil : sevenDayCalculation.totalTokens
+    }
+
+    private var thirtyDayTotal: Int64? {
+        thirtyDayCalculation.endDate == nil ? nil : thirtyDayCalculation.totalTokens
+    }
 
     private func updateVisibleHistory() {
         guard
@@ -396,32 +408,6 @@ private struct UsageHistoryCard: View {
         selectedBucketID = nil
     }
 
-    private func updateRollingTotals() {
-        guard let latestDate = history.compactMap(\.date).max() else {
-            sevenDayTokens = nil
-            thirtyDayTokens = nil
-            return
-        }
-
-        sevenDayTokens = rollingTotal(days: 7, endingAt: latestDate)
-        thirtyDayTokens = rollingTotal(days: 30, endingAt: latestDate)
-    }
-
-    private func rollingTotal(days: Int, endingAt latestDate: Date) -> Int64 {
-        guard let lowerBound = Calendar(identifier: .gregorian).date(
-            byAdding: .day,
-            value: -(days - 1),
-            to: latestDate
-        ) else {
-            return 0
-        }
-
-        return history.reduce(into: Int64.zero) { total, bucket in
-            guard let date = bucket.date, date >= lowerBound, date <= latestDate else { return }
-            total += bucket.tokens
-        }
-    }
-
     private var selectedBucket: DailyUsageBucket? {
         guard let selectedBucketID else { return nil }
         return visibleHistory.first { $0.id == selectedBucketID }
@@ -438,8 +424,8 @@ private struct UsageHistoryCard: View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .top, spacing: 28) {
                 UsageSummaryMetric(label: "1d 消耗", value: todayLocalTokens, accent: true)
-                UsageSummaryMetric(label: "7d 消耗", value: sevenDayTokens)
-                UsageSummaryMetric(label: "30d 消耗", value: thirtyDayTokens)
+                UsageSummaryMetric(label: "7d 消耗", value: sevenDayTotal)
+                UsageSummaryMetric(label: "30d 消耗", value: thirtyDayTotal)
             }
 
             Divider().opacity(0.35)
@@ -448,6 +434,7 @@ private struct UsageHistoryCard: View {
             HStack(spacing: 8) {
                 rangePicker
                 Spacer(minLength: 8)
+                detailsButton
                 verifyButton
             }
             .padding(.bottom, 16)
@@ -538,30 +525,41 @@ private struct UsageHistoryCard: View {
 
         }
         .cardStyle()
-        .sheet(isPresented: $showsArchiveDetails) {
-            ArchiveVerificationDetailSheet(
-                status: archiveStatus,
-                latestArchivedDate: latestArchivedDate
+        .sheet(isPresented: $showsUsageDetails) {
+            UsageCalculationDetailSheet(
+                sevenDayCalculation: sevenDayCalculation,
+                thirtyDayCalculation: thirtyDayCalculation,
+                todayLocalTokens: todayLocalTokens
             )
         }
         .onAppear {
             updateVisibleHistory()
-            updateRollingTotals()
         }
         .onChange(of: history) { _ in
             updateVisibleHistory()
-            updateRollingTotals()
         }
         .onChange(of: range) { _ in updateVisibleHistory() }
     }
 
     private var verifyButton: some View {
         Button(action: verifyArchive) {
-            Label("核验归档", systemImage: "arrow.triangle.2.circlepath")
+            Label("核验", systemImage: "checkmark.shield")
         }
         .buttonStyle(.bordered)
         .controlSize(.small)
         .disabled(archiveStatus == .verifying)
+        .help("核验本地历史与 Codex 已结束日期")
+    }
+
+    private var detailsButton: some View {
+        Button {
+            showsUsageDetails = true
+        } label: {
+            Label("详情", systemImage: "list.bullet")
+        }
+        .buttonStyle(.bordered)
+        .controlSize(.small)
+        .help("查看 7d 和 30d 消耗计算明细")
     }
 
     private var rangePicker: some View {
@@ -622,126 +620,102 @@ private struct ChartHoverTooltip: View {
     }
 }
 
-private struct ArchiveVerificationBanner: View {
-    let status: ArchiveVerificationStatus
-    let latestArchivedDate: String?
-    let showDetails: () -> Void
-
-    var body: some View {
-        Button(action: showDetails) {
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 5) {
-                    statusIcon
-                    Text(statusTitle)
-                        .foregroundStyle(statusColor)
-                        .lineLimit(1)
-                    Spacer(minLength: 4)
-                    Label("查看详情", systemImage: "chevron.right")
-                        .labelStyle(.titleAndIcon)
-                        .foregroundStyle(.secondary)
-                }
-                .font(.caption.weight(.medium))
-
-                Text("当天仅读取 Codex 实时数据，不参与归档")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .buttonStyle(.plain)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 9)
-        .padding(.vertical, 6)
-        .background(.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 8))
-    }
-
-    private func completedTitle(checkedDays: Int, repairedDays: Int) -> String {
-        let latest = latestArchivedDate ?? "无"
-        if repairedDays == 0 {
-            return "已核验完成 · 最新归档：\(latest)"
-        }
-        return "已修复 \(repairedDays) 天 · 最新归档：\(latest)"
-    }
-
-    private var statusTitle: String {
-        switch status {
-        case .idle:
-            return latestArchivedDate.map { "最新归档：\($0)" } ?? "尚无历史归档"
-        case .verifying:
-            return "正在核验 Codex 可查历史…"
-        case .completed(let checkedDays, let repairedDays):
-            return completedTitle(checkedDays: checkedDays, repairedDays: repairedDays)
-        case .failed(let message):
-            return "核验失败：\(message)"
-        }
-    }
-
-    @ViewBuilder private var statusIcon: some View {
-        switch status {
-        case .idle:
-            Image(systemName: "archivebox")
-        case .verifying:
-            ProgressView().controlSize(.mini)
-        case .completed:
-            Image(systemName: "checkmark.circle.fill")
-        case .failed:
-            Image(systemName: "exclamationmark.triangle.fill")
-        }
-    }
-
-    private var statusColor: Color {
-        switch status {
-        case .completed: return .green
-        case .failed: return .orange
-        case .idle, .verifying: return .secondary
-        }
-    }
-}
-
-private struct ArchiveVerificationDetailSheet: View {
-    let status: ArchiveVerificationStatus
-    let latestArchivedDate: String?
+private struct UsageCalculationDetailSheet: View {
+    let sevenDayCalculation: UsageWindowCalculation
+    let thirtyDayCalculation: UsageWindowCalculation
+    let todayLocalTokens: Int64?
     @Environment(\.dismiss) private var dismiss
+    @State private var selectedDays = 7
+
+    private var calculation: UsageWindowCalculation {
+        selectedDays == 7 ? sevenDayCalculation : thirtyDayCalculation
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
+        VStack(alignment: .leading, spacing: 14) {
             HStack {
-                Label("归档核验详情", systemImage: "checkmark.shield")
+                Label("消耗计算明细", systemImage: "list.bullet.rectangle")
                     .font(.title3.weight(.semibold))
                 Spacer()
                 Button("完成") { dismiss() }
             }
 
-            DetailRow(title: "核验范围", value: "Codex 当前可查询的全部已结束日期")
-            DetailRow(title: "最新归档", value: latestArchivedDate ?? "尚无")
-            DetailRow(title: "当日数据", value: "仅实时读取，不写入归档")
+            Picker("范围", selection: $selectedDays) {
+                Text("7d 消耗").tag(7)
+                Text("30d 消耗").tag(30)
+            }
+            .pickerStyle(.segmented)
 
-            switch status {
-            case .idle:
-                Text("点击“核验归档”后会全量比较本地归档和 Codex 历史，仅补齐或改正不一致的日期；不会删除本地已有记录。")
-            case .verifying:
-                Text("正在读取并比对 Codex 可查历史，请稍候。")
-            case .completed(let checkedDays, let repairedDays):
-                DetailRow(title: "本次核验", value: "已检查 \(checkedDays) 天，修复 \(repairedDays) 天")
-            case .failed(let message):
-                DetailRow(title: "本次结果", value: "失败：\(message)")
+            VStack(alignment: .leading, spacing: 3) {
+                Text("计算范围")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(rangeDescription)
+                    .font(.subheadline.weight(.medium))
+                Text("仅汇总来源有记录的日期，共 \(calculation.buckets.count) 天。")
+                    .font(.caption2)
+                    .foregroundStyle(.secondary)
             }
 
-            Spacer()
+            Divider()
+
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(calculation.buckets) { bucket in
+                        HStack(spacing: 10) {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(bucket.startDate)
+                                    .font(.subheadline.monospacedDigit())
+                                Text(sourceDescription(for: bucket))
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Text(bucket.tokens.millionTokenCount)
+                                .font(.subheadline.weight(.semibold).monospacedDigit())
+                        }
+                        .padding(.vertical, 7)
+
+                        if bucket.id != calculation.buckets.last?.id {
+                            Divider().opacity(0.45)
+                        }
+                    }
+
+                    if calculation.buckets.isEmpty {
+                        Text("暂无可用于计算的每日 Token 数据")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, minHeight: 120)
+                    }
+                }
+            }
+
+            Divider()
+            HStack {
+                Text("\(selectedDays)d 消耗合计")
+                    .font(.subheadline.weight(.semibold))
+                Spacer()
+                Text(calculation.totalTokens.millionTokenCount)
+                    .font(.title3.weight(.bold).monospacedDigit())
+                    .foregroundStyle(UsagePalette.blue)
+            }
         }
         .padding(20)
-        .frame(width: 390, height: 300)
+        .frame(width: 460, height: 500)
     }
-}
 
-private struct DetailRow: View {
-    let title: String
-    let value: String
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(title).font(.caption).foregroundStyle(.secondary)
-            Text(value).font(.body)
+    private var rangeDescription: String {
+        guard let startDate = calculation.startDate, let endDate = calculation.endDate else {
+            return "暂无日期范围"
         }
+        return "\(startDate) 至 \(endDate)（含首尾）"
+    }
+
+    private func sourceDescription(for bucket: DailyUsageBucket) -> String {
+        if bucket.startDate == DailyUsageBucket.utcDayKey(), todayLocalTokens != nil {
+            return "今日 · 本机实时统计"
+        }
+        return "已结束日 · Codex 最终数据"
     }
 }
 
