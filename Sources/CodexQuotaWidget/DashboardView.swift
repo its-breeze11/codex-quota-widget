@@ -635,6 +635,10 @@ private struct UsageCalculationDetailSheet: View {
         selectedDays == 7 ? sevenDayCalculation : thirtyDayCalculation
     }
 
+    private var displayedBuckets: [DailyUsageBucket] {
+        Array(calculation.buckets.reversed())
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack {
@@ -665,7 +669,7 @@ private struct UsageCalculationDetailSheet: View {
 
             ScrollView {
                 LazyVStack(spacing: 0) {
-                    ForEach(calculation.buckets) { bucket in
+                    ForEach(displayedBuckets) { bucket in
                         HStack(spacing: 10) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(bucket.startDate)
@@ -680,12 +684,12 @@ private struct UsageCalculationDetailSheet: View {
                         }
                         .padding(.vertical, 7)
 
-                        if bucket.id != calculation.buckets.last?.id {
+                        if bucket.id != displayedBuckets.last?.id {
                             Divider().opacity(0.45)
                         }
                     }
 
-                    if calculation.buckets.isEmpty {
+                    if displayedBuckets.isEmpty {
                         Text("暂无可用于计算的每日 Token 数据")
                             .font(.caption)
                             .foregroundStyle(.secondary)
