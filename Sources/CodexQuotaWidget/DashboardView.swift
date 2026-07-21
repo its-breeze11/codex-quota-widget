@@ -29,6 +29,7 @@ struct DashboardView: View {
                                     todayLocalTokens: viewModel.todayLocalTokens,
                                     summary: snapshot.usage.summary,
                                     chartHeight: max(80, geometry.size.height - 205),
+                                    detailsSheetHeight: presentation.panelHeight,
                                     archiveStatus: viewModel.archiveVerificationStatus,
                                     verifyArchive: viewModel.verifyArchive
                                 )
@@ -363,6 +364,7 @@ private struct UsageHistoryCard: View {
     let todayLocalTokens: Int64?
     let summary: AccountTokenUsageSummary
     let chartHeight: CGFloat
+    let detailsSheetHeight: CGFloat
     let archiveStatus: ArchiveVerificationStatus
     let verifyArchive: () -> Void
 
@@ -529,7 +531,8 @@ private struct UsageHistoryCard: View {
             UsageCalculationDetailSheet(
                 sevenDayCalculation: sevenDayCalculation,
                 thirtyDayCalculation: thirtyDayCalculation,
-                todayLocalTokens: todayLocalTokens
+                todayLocalTokens: todayLocalTokens,
+                preferredHeight: detailsSheetHeight
             )
         }
         .onAppear {
@@ -624,6 +627,7 @@ private struct UsageCalculationDetailSheet: View {
     let sevenDayCalculation: UsageWindowCalculation
     let thirtyDayCalculation: UsageWindowCalculation
     let todayLocalTokens: Int64?
+    let preferredHeight: CGFloat
     @Environment(\.dismiss) private var dismiss
     @State private var selectedDays = 7
 
@@ -701,7 +705,7 @@ private struct UsageCalculationDetailSheet: View {
             }
         }
         .padding(20)
-        .frame(width: 460, height: 500)
+        .frame(width: 460, height: preferredHeight)
     }
 
     private var rangeDescription: String {

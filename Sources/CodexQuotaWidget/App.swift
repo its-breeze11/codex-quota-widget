@@ -20,13 +20,15 @@ final class FloatingPanel: NSPanel {
 
 final class PanelPresentation: ObservableObject {
     @Published var isExpanded = false
+    @Published private(set) var panelHeight: CGFloat = 350
+
+    func updatePanelHeight(_ height: CGFloat) {
+        panelHeight = height
+    }
 }
 
 @MainActor
-final class AppDelegate: NSObject, NSApplicationDelegate {
-    // Bump the autosave key so the compact default takes effect once before
-    // subsequent manual resizing is remembered.
-    private static let panelFrameName = "CodexQuotaWidgetPanel-v12"
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private static let collapsedPanelSize = NSSize(width: 360, height: 350)
     private static let presentationWidthDelta: CGFloat = 360
     // This dashboard is designed as a two-column surface. Keep enough room for
@@ -50,10 +52,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         observeViewModel()
         viewModel.start()
         showPanel()
-    }
-
-    func applicationWillTerminate(_ notification: Notification) {
-        panel?.saveFrame(usingName: Self.panelFrameName)
     }
 
     func applicationShouldHandleReopen(
@@ -88,10 +86,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 togglePresentation: { [weak self] in self?.togglePresentation() }
             )
         )
-        panel.setFrameAutosaveName(Self.panelFrameName)
+        panel.delegate = self
 
-        if !panel.setFrameUsingName(Self.panelFrameName),
-           let screen = NSScreen.main {
+        if let screen = NSScreen.main {
             let visible = screen.visibleFrame
             let origin = NSPoint(
                 x: visible.maxX - panel.frame.width - 20,
@@ -101,6 +98,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         self.panel = panel
+        presentation.updatePanelHeight(panel.frame.height)
     }
 
     private func togglePresentation() {
@@ -124,6 +122,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // causes a visible second layout bounce while collapsing. Apply one
         // atomic resize instead.
         panel.setFrame(frame, display: true, animate: false)
+        presentation.updatePanelHeight(frame.height)
+    }
+
+    func windowDidResize(_ notification: Notification) {
+        guard let panel = notification.object as? FloatingPanel else { return }
+        presentation.updatePanelHeight(panel.frame.height)
     }
 
     private func configureStatusItem() {
