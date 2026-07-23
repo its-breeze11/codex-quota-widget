@@ -3,6 +3,23 @@ import Foundation
 
 @MainActor
 final class DashboardViewModel: ObservableObject {
+    private enum ArchiveRefreshScope {
+        case recent(days: Int)
+        case all
+
+        var recentDays: Int? {
+            switch self {
+            case .recent(let days): return days
+            case .all: return nil
+            }
+        }
+
+        var reportsStatus: Bool {
+            if case .all = self { return true }
+            return false
+        }
+    }
+
     @Published private(set) var snapshot: DashboardSnapshot?
     @Published private(set) var history: [DailyUsageBucket] = []
     @Published private(set) var todayLocalTokens: Int64?
@@ -48,20 +65,20 @@ final class DashboardViewModel: ObservableObject {
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 60_000_000_000)
                 guard !Task.isCancelled else { return }
-                await self?.load()
+                await self?.load(archiveRefresh: .recent(days: 7))
             }
         }
     }
 
     func refresh() {
         Task { [weak self] in
-            await self?.load()
+            await self?.load(archiveRefresh: .recent(days: 7))
         }
     }
 
     func verifyArchive() {
         Task { [weak self] in
-            await self?.load(verifyArchive: true)
+            await self?.load(archiveRefresh: .all)
         }
     }
 
@@ -82,10 +99,10 @@ final class DashboardViewModel: ObservableObject {
         }
     }
 
-    private func load(verifyArchive: Bool = false) async {
+    private func load(archiveRefresh: ArchiveRefreshScope = .recent(days: 7)) async {
         guard !isRefreshing else { return }
         isRefreshing = true
-        if verifyArchive {
+        if archiveRefresh.reportsStatus {
             archiveVerificationStatus = .verifying
         }
         defer { isRefreshing = false }
@@ -100,16 +117,18 @@ final class DashboardViewModel: ObservableObject {
             if let usageStore {
                 var archivedHistory = try await usageStore.loadAll()
 
-                if verifyArchive {
-                    let repairs = UsageArchivePolicy.repairBuckets(
-                        archive: archivedHistory,
-                        codexHistory: remoteHistory,
-                        currentDay: currentDay
-                    )
-                    if !repairs.isEmpty {
-                        try await usageStore.merge(repairs)
-                        archivedHistory = try await usageStore.loadAll()
-                    }
+                let repairs = UsageArchivePolicy.repairBuckets(
+                    archive: archivedHistory,
+                    codexHistory: remoteHistory,
+                    currentDay: currentDay,
+                    recentDays: archiveRefresh.recentDays
+                )
+                if !repairs.isEmpty {
+                    try await usageStore.merge(repairs)
+                    archivedHistory = try await usageStore.loadAll()
+                }
+
+                if archiveRefresh.reportsStatus {
                     archiveVerificationStatus = .completed(
                         checkedDays: UsageArchivePolicy.completedBuckets(
                             from: remoteHistory,
@@ -128,7 +147,7 @@ final class DashboardViewModel: ObservableObject {
                     codexHistory: remoteHistory,
                     currentDay: currentDay
                 )
-            } else if verifyArchive {
+            } else if archiveRefresh.reportsStatus {
                 archiveVerificationStatus = .failed("本地归档不可用")
             }
 
@@ -157,7 +176,7 @@ final class DashboardViewModel: ObservableObject {
                     ? error.localizedDescription
                     : "暂时无法刷新，仍展示上次成功数据。"
             }
-            if verifyArchive {
+            if archiveRefresh.reportsStatus {
                 archiveVerificationStatus = .failed(error.localizedDescription)
             }
         }

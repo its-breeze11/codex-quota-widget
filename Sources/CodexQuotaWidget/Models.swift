@@ -104,6 +104,10 @@ struct DailyUsageBucket: Codable, Equatable, Identifiable {
         dateFormatter.string(from: date)
     }
 
+    static func utcDate(for dayKey: String) -> Date? {
+        dateFormatter.date(from: dayKey)
+    }
+
     private static let dateFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
@@ -163,9 +167,31 @@ enum UsageRollingWindow {
 enum UsageArchivePolicy {
     static func completedBuckets(
         from codexHistory: [DailyUsageBucket],
-        currentDay: String
+        currentDay: String,
+        recentDays: Int? = nil
     ) -> [DailyUsageBucket] {
-        codexHistory.filter { $0.startDate < currentDay }
+        let completed = codexHistory.filter { $0.startDate < currentDay }
+        guard
+            let recentDays,
+            recentDays > 0,
+            let currentDate = DailyUsageBucket.utcDate(for: currentDay)
+        else {
+            return completed
+        }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
+        guard let lowerBound = calendar.date(
+                byAdding: .day,
+                value: -recentDays,
+                to: currentDate
+        ) else {
+            return completed
+        }
+
+        return completed.filter { bucket in
+            guard let date = bucket.date else { return false }
+            return date >= lowerBound
+        }
     }
 
     static func displayedHistory(
@@ -181,12 +207,17 @@ enum UsageArchivePolicy {
     static func repairBuckets(
         archive: [DailyUsageBucket],
         codexHistory: [DailyUsageBucket],
-        currentDay: String
+        currentDay: String,
+        recentDays: Int? = nil
     ) -> [DailyUsageBucket] {
         let archivedTokens = archive.reduce(into: [String: Int64]()) { values, bucket in
             values[bucket.startDate] = bucket.tokens
         }
-        return completedBuckets(from: codexHistory, currentDay: currentDay).filter {
+        return completedBuckets(
+            from: codexHistory,
+            currentDay: currentDay,
+            recentDays: recentDays
+        ).filter {
             archivedTokens[$0.startDate] != $0.tokens
         }
     }

@@ -118,4 +118,31 @@ final class ModelTests: XCTestCase {
             ]
         )
     }
+
+    func testArchivePolicyLimitsAutomaticRepairToSevenCompletedDays() {
+        let codexHistory = (12...19).map {
+            DailyUsageBucket(startDate: "2026-07-\($0)", tokens: Int64($0))
+        }
+        let archive = codexHistory.map { bucket in
+            DailyUsageBucket(startDate: bucket.startDate, tokens: bucket.tokens + 1)
+        }
+
+        XCTAssertEqual(
+            UsageArchivePolicy.completedBuckets(
+                from: codexHistory,
+                currentDay: "2026-07-20",
+                recentDays: 7
+            ).map(\.startDate),
+            ["2026-07-13", "2026-07-14", "2026-07-15", "2026-07-16", "2026-07-17", "2026-07-18", "2026-07-19"]
+        )
+        XCTAssertEqual(
+            UsageArchivePolicy.repairBuckets(
+                archive: archive,
+                codexHistory: codexHistory,
+                currentDay: "2026-07-20",
+                recentDays: 7
+            ).map(\.startDate),
+            ["2026-07-13", "2026-07-14", "2026-07-15", "2026-07-16", "2026-07-17", "2026-07-18", "2026-07-19"]
+        )
+    }
 }
