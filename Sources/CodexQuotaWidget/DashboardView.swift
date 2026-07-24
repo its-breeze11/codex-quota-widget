@@ -82,12 +82,14 @@ struct DashboardView: View {
             idealHeight: 350,
             maxHeight: .infinity
         )
-        .background(Color(nsColor: .windowBackgroundColor))
+        .background(UsagePalette.background)
         .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(.white.opacity(0.18), lineWidth: 1)
+                .strokeBorder(UsagePalette.border, lineWidth: 1)
         }
+        .preferredColorScheme(.dark)
+        .tint(UsagePalette.blue)
         .alert("未检测到 Codex CLI", isPresented: $viewModel.isCLIInstallPromptVisible) {
             Button("暂不安装", role: .cancel) {}
             Button("安装 CLI") {
@@ -126,7 +128,8 @@ struct DashboardView: View {
         HStack(spacing: 10) {
             WindowTrafficLights()
             Image(systemName: "terminal.fill")
-                .foregroundStyle(.tint)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(UsagePalette.blue)
             VStack(alignment: .leading, spacing: 1) {
                 Text("Codex 用量")
                     .font(.headline)
@@ -148,6 +151,7 @@ struct DashboardView: View {
         }
         .padding(.horizontal, 16)
         .frame(height: 46)
+        .background(UsagePalette.header)
         .contentShape(Rectangle())
     }
 
@@ -242,7 +246,7 @@ private struct QuotaCard: View {
 
             if let window = bucket.primary {
                 Text("剩余 \(window.remainingPercent)%")
-            .font(.system(size: 26, weight: .bold, design: .rounded))
+                    .font(.system(size: 26, weight: .bold, design: .rounded))
                     .foregroundStyle(UsagePalette.blue)
                 .monospacedDigit()
 
@@ -260,9 +264,9 @@ private struct QuotaCard: View {
     }
 
     private func progressColor(for remaining: Int) -> Color {
-        if remaining <= 10 { return .red }
-        if remaining <= 30 { return .orange }
-        return Color(nsColor: .systemGray)
+        if remaining <= 10 { return UsagePalette.danger }
+        if remaining <= 30 { return UsagePalette.warning }
+        return UsagePalette.blue
     }
 }
 
@@ -278,7 +282,7 @@ private struct QuotaProgressBar: View {
         GeometryReader { geometry in
             ZStack(alignment: .leading) {
                 Capsule()
-                    .fill(Color(nsColor: .separatorColor).opacity(0.32))
+                    .fill(UsagePalette.progressTrack)
                 Capsule()
                     .fill(color)
                     .frame(width: geometry.size.width * progress)
@@ -310,8 +314,8 @@ private struct ResetCreditsCard: View {
                 let visibleCredits = Array(credits.sorted(by: expiresSooner).prefix(3))
                 ForEach(visibleCredits) { credit in
                     HStack {
-                        Circle()
-                            .fill(.green)
+                            Circle()
+                            .fill(UsagePalette.success)
                             .frame(width: 6, height: 6)
                         Text(credit.title ?? "完整重置")
                             .lineLimit(1)
@@ -469,6 +473,7 @@ private struct UsageHistoryCard: View {
                         AxisValueLabel {
                             if let count = value.as(Int64.self) {
                                 Text(count.millionTokenCount)
+                                    .foregroundStyle(UsagePalette.muted)
                             }
                         }
                     }
@@ -609,12 +614,12 @@ private struct ChartHoverTooltip: View {
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
         .background(
-            Color(nsColor: .windowBackgroundColor).opacity(0.96),
+            UsagePalette.overlay,
             in: RoundedRectangle(cornerRadius: 7, style: .continuous)
         )
         .overlay {
             RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .strokeBorder(.white.opacity(0.16), lineWidth: 1)
+                .strokeBorder(UsagePalette.border, lineWidth: 1)
         }
         .fixedSize()
     }
@@ -707,6 +712,8 @@ private struct UsageCalculationDetailSheet: View {
         }
         .padding(20)
         .frame(width: 460, height: preferredHeight)
+        .background(UsagePalette.background)
+        .preferredColorScheme(.dark)
     }
 
     private var rangeDescription: String {
@@ -725,7 +732,17 @@ private struct UsageCalculationDetailSheet: View {
 }
 
 private enum UsagePalette {
-    static let blue = Color(red: 0.36, green: 0.62, blue: 0.92)
+    static let background = Color(red: 0.047, green: 0.071, blue: 0.102)
+    static let header = Color(red: 0.065, green: 0.094, blue: 0.133)
+    static let card = Color(red: 0.102, green: 0.145, blue: 0.200)
+    static let overlay = Color(red: 0.075, green: 0.106, blue: 0.149).opacity(0.98)
+    static let blue = Color(red: 0.30, green: 0.68, blue: 1.0)
+    static let muted = Color(red: 0.61, green: 0.68, blue: 0.77)
+    static let border = Color.white.opacity(0.12)
+    static let progressTrack = Color.white.opacity(0.10)
+    static let warning = Color(red: 1.0, green: 0.66, blue: 0.20)
+    static let danger = Color(red: 0.96, green: 0.31, blue: 0.31)
+    static let success = Color(red: 0.20, green: 0.85, blue: 0.46)
 }
 
 private struct ErrorBanner: View {
@@ -734,10 +751,10 @@ private struct ErrorBanner: View {
     var body: some View {
         Label(message, systemImage: "exclamationmark.triangle.fill")
             .font(.caption)
-            .foregroundStyle(.red)
+            .foregroundStyle(UsagePalette.danger)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(10)
-            .background(.red.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+            .background(UsagePalette.danger.opacity(0.13), in: RoundedRectangle(cornerRadius: 10))
     }
 }
 
@@ -745,6 +762,24 @@ private extension View {
     func cardStyle() -> some View {
         padding(14)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(.primary.opacity(0.055), in: RoundedRectangle(cornerRadius: 14))
+            .background {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(UsagePalette.card)
+                    .overlay(alignment: .top) {
+                        RoundedRectangle(cornerRadius: 14, style: .continuous)
+                            .fill(
+                                LinearGradient(
+                                    colors: [.white.opacity(0.055), .clear],
+                                    startPoint: .top,
+                                    endPoint: .bottom
+                                )
+                            )
+                    }
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(UsagePalette.border, lineWidth: 1)
+            }
+            .shadow(color: .black.opacity(0.20), radius: 8, y: 3)
     }
 }
