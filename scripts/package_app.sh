@@ -16,9 +16,10 @@ swift build \
   --jobs 1 \
   -c release
 
-mkdir -p "$APP_DIR/Contents/MacOS"
+mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 cp "$ROOT_DIR/Info.plist" "$APP_DIR/Contents/Info.plist"
 cp "$BUILD_DIR/release/CodexQuotaWidget" "$APP_DIR/Contents/MacOS/CodexQuotaWidget"
+cp "$ROOT_DIR/assets/CodexQuotaWidget.icns" "$APP_DIR/Contents/Resources/CodexQuotaWidget.icns"
 chmod +x "$APP_DIR/Contents/MacOS/CodexQuotaWidget"
 
 codesign --force --deep --sign - "$APP_DIR"

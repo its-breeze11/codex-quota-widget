@@ -228,16 +228,15 @@ private struct QuotaCard: View {
                 }
                 Spacer()
                 if let resetDate = bucket.primary?.resetDate {
-                    TimelineView(.periodic(from: .now, by: 60)) { _ in
-                        Label {
-                            Text(resetDate, style: .relative)
-                        } icon: {
-                            Image(systemName: "clock.arrow.circlepath")
-                        }
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .help("重置时间：\(resetDate.formatted(date: .abbreviated, time: .shortened))")
+                    Label {
+                        Text(resetDate.yyyyMMddDashed)
+                            .monospacedDigit()
+                    } icon: {
+                        Image(systemName: "clock.arrow.circlepath")
                     }
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .help("重置时间：\(resetDate.formatted(date: .abbreviated, time: .shortened))")
                 }
             }
 
@@ -318,11 +317,9 @@ private struct ResetCreditsCard: View {
                             .lineLimit(1)
                         Spacer()
                         if let expiration = credit.expirationDate {
-                            TimelineView(.periodic(from: .now, by: 60)) { _ in
-                                Text(expiration, style: .relative)
-                                    .monospacedDigit()
-                                    .help("到期：\(expiration.formatted(date: .abbreviated, time: .shortened))")
-                            }
+                            Text(expiration.yyyyMMddDashed)
+                                .monospacedDigit()
+                                .help("到期：\(expiration.formatted(date: .abbreviated, time: .shortened))")
                         } else {
                             Text("未提供到期时间")
                         }

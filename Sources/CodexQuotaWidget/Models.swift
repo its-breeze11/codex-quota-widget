@@ -254,3 +254,18 @@ extension Int64 {
         return String(format: "%.2fM", millions)
     }
 }
+
+extension Date {
+    var yyyyMMddDashed: String {
+        Self.yyyyMMddDashedFormatter.string(from: self)
+    }
+
+    private static let yyyyMMddDashedFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+}
