@@ -140,7 +140,12 @@ struct CodexAppServerClient {
 
         while rateLimits == nil || usage == nil {
             guard let messageData = try reader.nextLine() else {
-                if process.terminationReason == .uncaughtSignal {
+                // `terminationReason` is only valid after an NSTask has fully
+                // exited. App Server can close stdout just before that state,
+                // and querying it then raises an Objective-C exception that
+                // aborts the entire widget instead of surfacing a retryable
+                // refresh error.
+                if process.isRunning {
                     throw CodexClientError.requestTimedOut
                 }
                 throw CodexClientError.connectionClosed
