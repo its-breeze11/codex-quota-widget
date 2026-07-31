@@ -264,9 +264,26 @@ private struct QuotaCard: View {
     }
 
     private func progressColor(for remaining: Int) -> Color {
-        if remaining <= 10 { return UsagePalette.danger }
-        if remaining <= 30 { return UsagePalette.warning }
-        return UsagePalette.blue
+        switch remaining {
+        case 90...:
+            return UsagePalette.quotaDeepGreen
+        case 75...89:
+            return UsagePalette.quotaGreen
+        case 60...74:
+            return UsagePalette.quotaLightGreen
+        case 45...59:
+            return UsagePalette.quotaLightOrange
+        case 30...44:
+            return UsagePalette.quotaOrange
+        case 20...29:
+            return UsagePalette.quotaDeepOrange
+        case 10...19:
+            return UsagePalette.quotaLightRed
+        case 5...9:
+            return UsagePalette.quotaRed
+        default:
+            return UsagePalette.quotaDeepRed
+        }
     }
 }
 
@@ -740,6 +757,15 @@ private enum UsagePalette {
     static let muted = Color(red: 0.61, green: 0.68, blue: 0.77)
     static let border = Color.white.opacity(0.12)
     static let progressTrack = Color.white.opacity(0.10)
+    static let quotaDeepGreen = Color(red: 0.04, green: 0.46, blue: 0.27)
+    static let quotaGreen = Color(red: 0.10, green: 0.66, blue: 0.36)
+    static let quotaLightGreen = Color(red: 0.39, green: 0.82, blue: 0.49)
+    static let quotaLightOrange = Color(red: 1.0, green: 0.78, blue: 0.35)
+    static let quotaOrange = Color(red: 1.0, green: 0.60, blue: 0.17)
+    static let quotaDeepOrange = Color(red: 0.93, green: 0.36, blue: 0.10)
+    static let quotaLightRed = Color(red: 1.0, green: 0.48, blue: 0.41)
+    static let quotaRed = Color(red: 0.93, green: 0.20, blue: 0.23)
+    static let quotaDeepRed = Color(red: 0.62, green: 0.07, blue: 0.10)
     static let warning = Color(red: 1.0, green: 0.66, blue: 0.20)
     static let danger = Color(red: 0.96, green: 0.31, blue: 0.31)
     static let success = Color(red: 0.20, green: 0.85, blue: 0.46)
