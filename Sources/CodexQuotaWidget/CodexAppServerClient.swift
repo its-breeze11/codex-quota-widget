@@ -1,8 +1,9 @@
+import AppKit
 import Foundation
 
 enum CodexClientError: LocalizedError {
     case executableNotFound
-    case installerNotAvailable
+    case npmNotFound
     case installationFailed(Int32)
     case launchFailed(String)
     case connectionClosed
@@ -14,8 +15,8 @@ enum CodexClientError: LocalizedError {
         switch self {
         case .executableNotFound:
             return "未检测到 Codex CLI。"
-        case .installerNotAvailable:
-            return "未找到 Node/npm，无法自动安装 Codex CLI。请先安装 Node.js 后重试。"
+        case .npmNotFound:
+            return "未检测到 Node.js/npm，暂时无法安装 Codex CLI。"
         case .installationFailed(let status):
             return "Codex CLI 安装失败（退出码 \(status)）。请检查网络后重试。"
         case .launchFailed(let message):
@@ -43,7 +44,12 @@ struct CodexAppServerClient {
     /// avoids `sudo` and never changes a system-wide Node installation.
     func installCLI() async throws {
         try await Task.detached(priority: .utility) {
-            let npmURL = try Self.locateExecutable(named: "npm")
+            let npmURL: URL
+            do {
+                npmURL = try Self.locateExecutable(named: "npm")
+            } catch {
+                throw CodexClientError.npmNotFound
+            }
             let home = FileManager.default.homeDirectoryForCurrentUser
             let process = Process()
             process.executableURL = npmURL
@@ -61,7 +67,7 @@ struct CodexAppServerClient {
             do {
                 try process.run()
             } catch {
-                throw CodexClientError.installerNotAvailable
+                throw CodexClientError.npmNotFound
             }
             process.waitUntilExit()
 
@@ -72,6 +78,51 @@ struct CodexAppServerClient {
                 throw CodexClientError.installationFailed(process.terminationStatus)
             }
         }.value
+    }
+
+    /// `codex login` owns the interactive browser authorization.  Its status
+    /// command is intentionally used only as a post-login readiness check; the
+    /// widget never reads or stores the resulting credential.
+    func isLoggedIn() async -> Bool {
+        await Task.detached(priority: .utility) {
+            guard let executable = try? Self.locateCodexExecutable() else { return false }
+            let process = Process()
+            process.executableURL = executable
+            process.arguments = ["login", "status"]
+            process.standardOutput = FileHandle.nullDevice
+            process.standardError = FileHandle.nullDevice
+            do {
+                try process.run()
+                process.waitUntilExit()
+                return process.terminationStatus == 0
+            } catch {
+                return false
+            }
+        }.value
+    }
+
+    /// Login is deliberately performed in Terminal so Codex receives a real
+    /// interactive TTY for its browser/device authorization flow. macOS may
+    /// ask for Automation permission to open Terminal; that permission exists
+    /// solely to start this user-visible command.
+    func openLoginInTerminal() throws {
+        let executable = try Self.locateCodexExecutable()
+        let command = Self.shellQuote(executable.path) + " login"
+        let script = """
+        tell application "Terminal"
+            activate
+            do script "\(Self.appleScriptEscape(command))"
+        end tell
+        """
+        var error: NSDictionary?
+        guard NSAppleScript(source: script)?.executeAndReturnError(&error) != nil else {
+            let message = error?[NSAppleScript.errorMessage] as? String ?? "无法打开终端"
+            throw CodexClientError.launchFailed(message)
+        }
+    }
+
+    static func openNodeDownloadPage() {
+        NSWorkspace.shared.open(URL(string: "https://nodejs.org/en/download")!)
     }
 
     private static func fetchWithRetry() throws -> DashboardSnapshot {
@@ -238,7 +289,17 @@ struct CodexAppServerClient {
             return executable
         }
 
-        throw CodexClientError.installerNotAvailable
+        throw CodexClientError.executableNotFound
+    }
+
+    private static func shellQuote(_ value: String) -> String {
+        "'" + value.replacingOccurrences(of: "'", with: "'\\\"'\\\"'") + "'"
+    }
+
+    private static func appleScriptEscape(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
     }
 }
 

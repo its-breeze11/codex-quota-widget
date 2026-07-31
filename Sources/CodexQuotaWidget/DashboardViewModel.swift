@@ -29,12 +29,16 @@ final class DashboardViewModel: ObservableObject {
     @Published private(set) var archiveVerificationStatus: ArchiveVerificationStatus = .idle
     @Published private(set) var latestArchivedDate: String?
     @Published var isCLIInstallPromptVisible = false
+    @Published var isCLILoginPromptVisible = false
+    @Published var isNodeInstallPromptVisible = false
     @Published private(set) var isInstallingCLI = false
 
     private let client = CodexAppServerClient()
     private let usageStore: UsageStore?
     private var refreshLoop: Task<Void, Never>?
+    private var loginWatchTask: Task<Void, Never>?
     private var hasPromptedForCLIInstallation = false
+    private var hasPromptedForCLILogin = false
 
     init() {
         do {
@@ -47,6 +51,7 @@ final class DashboardViewModel: ObservableObject {
 
     deinit {
         refreshLoop?.cancel()
+        loginWatchTask?.cancel()
     }
 
     var primaryRemainingPercent: Int? {
@@ -92,9 +97,43 @@ final class DashboardViewModel: ObservableObject {
 
             do {
                 try await self.client.installCLI()
-                self.errorMessage = "Codex CLI 已安装。请在终端运行 codex login 完成登录，然后点击刷新。"
+                self.isCLILoginPromptVisible = true
             } catch {
-                self.errorMessage = error.localizedDescription
+                if case CodexClientError.npmNotFound = error {
+                    self.isNodeInstallPromptVisible = true
+                } else {
+                    self.errorMessage = error.localizedDescription
+                }
+            }
+        }
+    }
+
+    func beginCLILogin() {
+        guard !isInstallingCLI else { return }
+        do {
+            try client.openLoginInTerminal()
+            errorMessage = "已打开 Codex 登录。完成网页授权后，组件会自动启用。"
+            watchForLogin()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
+
+    func openNodeDownload() {
+        CodexAppServerClient.openNodeDownloadPage()
+        errorMessage = "已打开 Node.js 下载页。安装完成后回到这里点击刷新，组件会继续安装 Codex CLI。"
+    }
+
+    private func watchForLogin() {
+        loginWatchTask?.cancel()
+        loginWatchTask = Task { [weak self] in
+            for _ in 0..<100 {
+                guard !Task.isCancelled else { return }
+                if await self?.client.isLoggedIn() == true {
+                    await self?.load(archiveRefresh: .recent(days: 7))
+                    return
+                }
+                try? await Task.sleep(nanoseconds: 3_000_000_000)
             }
         }
     }
@@ -171,6 +210,14 @@ final class DashboardViewModel: ObservableObject {
                     hasPromptedForCLIInstallation = true
                     isCLIInstallPromptVisible = true
                 }
+            } else if snapshot == nil, !hasPromptedForCLILogin, !(await client.isLoggedIn()) {
+                // The executable may already be present but have no valid
+                // ChatGPT/Codex session (for example, after the user logged
+                // out in the CLI). Route this through the same explicit
+                // authorization flow instead of showing a generic server error.
+                errorMessage = nil
+                hasPromptedForCLILogin = true
+                isCLILoginPromptVisible = true
             } else {
                 errorMessage = snapshot == nil
                     ? error.localizedDescription

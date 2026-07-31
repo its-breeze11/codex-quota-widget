@@ -96,7 +96,23 @@ struct DashboardView: View {
                 viewModel.installCLI()
             }
         } message: {
-            Text("此工具需要本机 Codex CLI 才能读取用量。确认后会通过 npm 安装到 ~/.local，不需要管理员权限。安装完成后仍需由你在终端运行 codex login 登录账户。")
+            Text("此工具需要本机 Codex CLI 才能读取用量。确认后会通过 npm 安装到 ~/.local，不需要管理员权限。随后会请你在浏览器登录自己的 Codex 账户；应用不会读取或保存登录凭据。")
+        }
+        .alert("需要登录 Codex", isPresented: $viewModel.isCLILoginPromptVisible) {
+            Button("稍后登录", role: .cancel) {}
+            Button("打开登录") {
+                viewModel.beginCLILogin()
+            }
+        } message: {
+            Text("Codex CLI 已安装。为了读取你的额度，需要由你本人完成一次 ChatGPT/Codex 网页授权。确认后会打开终端并执行 codex login；授权完成后本应用会自动检测并启用。")
+        }
+        .alert("需要先安装 Node.js", isPresented: $viewModel.isNodeInstallPromptVisible) {
+            Button("暂不安装", role: .cancel) {}
+            Button("获取 Node.js") {
+                viewModel.openNodeDownload()
+            }
+        } message: {
+            Text("安装 Codex CLI 依赖 Node.js/npm。本机未检测到该运行环境，因此无法安全地继续。确认后会打开 Node.js 官方下载页；安装完成后回到本应用点击刷新即可继续。")
         }
         // Keep the panel visually identical whether it currently has keyboard focus or not.
         .environment(\.controlActiveState, .inactive)
