@@ -282,11 +282,11 @@ private struct QuotaCard: View {
     private func progressColor(for remaining: Int) -> Color {
         switch remaining {
         case 90...:
-            return UsagePalette.quotaDeepGreen
+            return UsagePalette.quotaLightGreen
         case 75...89:
             return UsagePalette.quotaGreen
         case 60...74:
-            return UsagePalette.quotaLightGreen
+            return UsagePalette.quotaDeepGreen
         case 45...59:
             return UsagePalette.quotaLightOrange
         case 30...44:
