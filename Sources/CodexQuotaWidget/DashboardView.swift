@@ -282,19 +282,23 @@ private struct QuotaCard: View {
     private func progressColor(for remaining: Int) -> Color {
         switch remaining {
         case 90...:
-            return UsagePalette.quotaLightGreen
-        case 75...89:
+            return UsagePalette.quotaBrightGreen
+        case 80...89:
             return UsagePalette.quotaGreen
-        case 60...74:
-            return UsagePalette.quotaDeepGreen
-        case 45...59:
-            return UsagePalette.quotaLightOrange
-        case 30...44:
-            return UsagePalette.quotaOrange
+        case 70...79:
+            return UsagePalette.quotaLimeGreen
+        case 60...69:
+            return UsagePalette.quotaYellowGreen
+        case 50...59:
+            return UsagePalette.quotaLimeYellow
+        case 40...49:
+            return UsagePalette.quotaYellow
+        case 30...39:
+            return UsagePalette.quotaOrangeYellow
         case 20...29:
-            return UsagePalette.quotaDeepOrange
+            return UsagePalette.quotaCoralOrange
         case 10...19:
-            return UsagePalette.quotaLightRed
+            return UsagePalette.quotaCoralRed
         case 5...9:
             return UsagePalette.quotaRed
         default:
@@ -773,15 +777,17 @@ private enum UsagePalette {
     static let muted = Color(red: 0.61, green: 0.68, blue: 0.77)
     static let border = Color.white.opacity(0.12)
     static let progressTrack = Color.white.opacity(0.10)
-    static let quotaDeepGreen = Color(red: 0.10, green: 0.60, blue: 0.35)
-    static let quotaGreen = Color(red: 0.16, green: 0.76, blue: 0.43)
-    static let quotaLightGreen = Color(red: 0.46, green: 0.88, blue: 0.56)
-    static let quotaLightOrange = Color(red: 1.0, green: 0.84, blue: 0.45)
-    static let quotaOrange = Color(red: 1.0, green: 0.69, blue: 0.28)
-    static let quotaDeepOrange = Color(red: 1.0, green: 0.46, blue: 0.16)
-    static let quotaLightRed = Color(red: 1.0, green: 0.57, blue: 0.51)
-    static let quotaRed = Color(red: 1.0, green: 0.30, blue: 0.33)
-    static let quotaDeepRed = Color(red: 0.78, green: 0.13, blue: 0.17)
+    static let quotaBrightGreen = Color(red: 0.482, green: 0.843, blue: 0.478)
+    static let quotaGreen = Color(red: 0.408, green: 0.804, blue: 0.431)
+    static let quotaLimeGreen = Color(red: 0.467, green: 0.761, blue: 0.392)
+    static let quotaYellowGreen = Color(red: 0.565, green: 0.725, blue: 0.357)
+    static let quotaLimeYellow = Color(red: 0.663, green: 0.686, blue: 0.318)
+    static let quotaYellow = Color(red: 0.761, green: 0.643, blue: 0.278)
+    static let quotaOrangeYellow = Color(red: 0.855, green: 0.580, blue: 0.243)
+    static let quotaCoralOrange = Color(red: 0.910, green: 0.506, blue: 0.267)
+    static let quotaCoralRed = Color(red: 0.886, green: 0.416, blue: 0.306)
+    static let quotaRed = Color(red: 0.827, green: 0.294, blue: 0.290)
+    static let quotaDeepRed = Color(red: 0.725, green: 0.176, blue: 0.259)
     static let warning = Color(red: 1.0, green: 0.66, blue: 0.20)
     static let danger = Color(red: 0.96, green: 0.31, blue: 0.31)
     static let success = Color(red: 0.20, green: 0.85, blue: 0.46)
