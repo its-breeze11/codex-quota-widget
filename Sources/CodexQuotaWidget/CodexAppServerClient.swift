@@ -34,6 +34,10 @@ enum CodexClientError: LocalizedError {
 }
 
 struct CodexAppServerClient {
+    /// Keep the executable installed by the widget reproducible. Upgrades are
+    /// intentional source changes instead of a moving `latest` tag.
+    private static let codexCLIVersion = "0.146.0"
+
     func fetchSnapshot() async throws -> DashboardSnapshot {
         try await Task.detached(priority: .utility) {
             try Self.fetchWithRetry()
@@ -57,7 +61,7 @@ struct CodexAppServerClient {
                 "install",
                 "--global",
                 "--prefix", home.appendingPathComponent(".local").path,
-                "@openai/codex@latest"
+                "@openai/codex@\(Self.codexCLIVersion)"
             ]
             // npm can emit a large progress log. It is intentionally discarded so
             // its pipe cannot block the installation process.

@@ -2,24 +2,6 @@
 
 一个只在本机运行的 macOS 菜单栏与桌面悬浮工具，用于查看 Codex 当前额度窗口、可用重置次数和每日 Token 历史。
 
-## 界面
-
-| 收起态 | 展开态 |
-| --- | --- |
-| ![收起态：额度与重置次数](assets/dashboard-collapsed.png) | ![展开态：额度、重置、消耗趋势与核验](assets/dashboard-expanded.png) |
-
-### 展开态：30 天范围
-
-![展开态：30 天 Token 消耗趋势](assets/dashboard-expanded-30d.png)
-
-### 展开态：全部范围
-
-![展开态：全部 Token 消耗趋势](assets/dashboard-expanded-all.png)
-
-### 消耗计算详情
-
-![7d 与 30d 消耗的逐日计算明细](assets/usage-calculation-details.png)
-
 ## 能力
 
 - 展示 Codex 主额度的剩余百分比和重置倒计时，不展示模型专属额度桶。
@@ -39,10 +21,18 @@
 
 额度接口返回窗口内已使用百分比，不返回可换算的 Token 总容量。因此应用只显示剩余比例，不用每日 Token 反推额度。
 
+## 隐私与安全
+
+- 应用不读取、复制、保存或上传 Codex 登录令牌，也不包含遥测、分析 SDK 或自建网络请求。
+- 为补齐“今日”实时用量，应用会流式扫描 `~/.codex/sessions` 内的 `.jsonl` 会话记录，只解析 `token_count` 事件；提示词、响应正文和其他事件不会被保存或上传。
+- 本地 SQLite 仅保存日期、聚合 Token 数和同步时间：`~/Library/Application Support/CodexQuotaWidget/usage.sqlite3`。
+- 额度和历史数据由本机 Codex CLI 的只读 App Server 方法返回。请只在你信任本机 Codex 安装和本地用户目录权限的设备上运行。
+- 公开仓库不包含真实账户截图、会话日志、数据库或构建产物。若提交 Issue、日志或截图，请先移除账户、额度、路径和会话内容。
+
 ## 环境要求
 
 - macOS 13 或更高版本
-- 如果尚未安装 Codex CLI，应用会征得确认后通过本机 npm 安装到 `~/.local`（无需管理员权限）
+- 如果尚未安装 Codex CLI，应用会征得确认后通过本机 npm 安装固定版本 `@openai/codex@0.146.0` 到 `~/.local`（无需管理员权限）。升级 CLI 版本需要更新并审阅本仓库源码。
 - CLI 安装完成后，应用会征得确认并打开 `codex login`；账户网页登录只能由本人完成。应用不读取或保存登录凭据，登录成功后会自动启用刷新。
 - 自动安装依赖本机已有 Node/npm；缺少时应用会打开 Node.js 官方下载页，安装完成后点击刷新即可继续。
 - 匹配的 Swift 工具链和 macOS SDK；推荐完整 Xcode
@@ -57,12 +47,4 @@ zsh scripts/package_app.sh
 
 `dist/Codex Quota Widget.app`
 
-首次打开如果被 macOS 拦截，可在“系统设置 → 隐私与安全性”中允许打开。本项目当前使用本机 ad-hoc 签名，不适合直接对外分发。
-
-## 本地数据
-
-每日 Token 历史保存在：
-
-`~/Library/Application Support/CodexQuotaWidget/usage.sqlite3`
-
-官方没有承诺历史数据保留时长。应用只能保存首次运行时服务端仍能返回的数据，以及后续同步到本机的数据。
+首次打开如果被 macOS 拦截，可在“系统设置 → 隐私与安全性”中允许打开。本项目当前使用本机 ad-hoc 签名，仅适合本地开发；对外发布应使用 Developer ID 签名和 notarization。

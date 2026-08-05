@@ -25,36 +25,72 @@ enum LocalTodayUsageReader {
         var foundTokenEvent = false
 
         for case let fileURL as URL in enumerator {
-            guard fileURL.pathExtension == "jsonl" else { continue }
-            guard let contents = try? String(contentsOf: fileURL, encoding: .utf8) else { continue }
-
-            var previousCumulativeTotal: Int64?
-            for line in contents.split(whereSeparator: \.isNewline) {
-                guard let event = try? JSONDecoder().decode(TokenCountEvent.self, from: Data(line.utf8)),
-                      event.type == "event_msg",
-                      event.payload?.type == "token_count",
-                      let timestamp = event.timestamp,
-                      let cumulativeTotal = event.payload?.info?.totalTokenUsage?.totalTokens
-                else {
-                    continue
-                }
-
-                let isCurrentDay = timestamp.hasPrefix(day)
-                if isCurrentDay {
-                    foundTokenEvent = true
-                    if let previousCumulativeTotal {
-                        total += cumulativeTotal >= previousCumulativeTotal
-                            ? cumulativeTotal - previousCumulativeTotal
-                            : cumulativeTotal
-                    } else {
-                        total += cumulativeTotal
-                    }
-                }
-                previousCumulativeTotal = cumulativeTotal
+            guard
+                fileURL.pathExtension == "jsonl",
+                let values = try? fileURL.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]),
+                values.isRegularFile == true,
+                values.isSymbolicLink != true,
+                let fileUsage = readUsage(from: fileURL, for: day)
+            else {
+                continue
             }
+            total += fileUsage.total
+            foundTokenEvent = foundTokenEvent || fileUsage.foundTokenEvent
         }
 
         return foundTokenEvent ? total : nil
+    }
+
+    /// Session records can contain prompt and response text. Read them in small
+    /// chunks and decode only token-count events; raw session content is never
+    /// retained beyond the current line or written by this widget.
+    private static func readUsage(from fileURL: URL, for day: String) -> (total: Int64, foundTokenEvent: Bool)? {
+        guard let handle = try? FileHandle(forReadingFrom: fileURL) else { return nil }
+        defer { try? handle.close() }
+
+        var buffer = Data()
+        var total: Int64 = 0
+        var foundTokenEvent = false
+        var previousCumulativeTotal: Int64?
+
+        func consume(_ line: Data) {
+            guard
+                let event = try? JSONDecoder().decode(TokenCountEvent.self, from: line),
+                event.type == "event_msg",
+                event.payload?.type == "token_count",
+                let timestamp = event.timestamp,
+                let cumulativeTotal = event.payload?.info?.totalTokenUsage?.totalTokens
+            else {
+                return
+            }
+
+            if timestamp.hasPrefix(day) {
+                foundTokenEvent = true
+                if let previousCumulativeTotal {
+                    total += cumulativeTotal >= previousCumulativeTotal
+                        ? cumulativeTotal - previousCumulativeTotal
+                        : cumulativeTotal
+                } else {
+                    total += cumulativeTotal
+                }
+            }
+            previousCumulativeTotal = cumulativeTotal
+        }
+
+        while true {
+            let chunk = handle.availableData
+            guard !chunk.isEmpty else { break }
+            buffer.append(chunk)
+
+            while let newline = buffer.firstIndex(of: 0x0A) {
+                let line = Data(buffer[..<newline])
+                buffer.removeSubrange(...newline)
+                if !line.isEmpty { consume(line) }
+            }
+        }
+        if !buffer.isEmpty { consume(buffer) }
+
+        return (total, foundTokenEvent)
     }
 }
 
