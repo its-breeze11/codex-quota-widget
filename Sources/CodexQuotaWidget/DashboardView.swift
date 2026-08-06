@@ -271,7 +271,7 @@ private struct QuotaCard: View {
                     .foregroundStyle(.secondary)
 
                 QuotaProgressBar(
-                    usedPercent: window.usedPercent,
+                    remainingPercent: window.remainingPercent,
                     color: progressColor(for: window.remainingPercent)
                 )
             }
@@ -308,11 +308,28 @@ private struct QuotaCard: View {
 }
 
 private struct QuotaProgressBar: View {
-    let usedPercent: Int
+    let remainingPercent: Int
     let color: Color
 
+    private var clampedRemaining: Int {
+        min(max(remainingPercent, 0), 100)
+    }
+
+    private var showsRemaining: Bool {
+        clampedRemaining >= 50
+    }
+
     private var progress: CGFloat {
-        min(max(CGFloat(usedPercent) / 100, 0), 1)
+        let displayedPercent = showsRemaining
+            ? clampedRemaining
+            : 100 - clampedRemaining
+        return CGFloat(displayedPercent) / 100
+    }
+
+    private var accessibilityDescription: String {
+        showsRemaining
+            ? "额度剩余 \(clampedRemaining)%"
+            : "额度已使用 \(100 - clampedRemaining)%"
     }
 
     var body: some View {
@@ -326,8 +343,8 @@ private struct QuotaProgressBar: View {
             }
         }
         .frame(height: 7)
-        .accessibilityLabel("额度已使用 \(usedPercent)%")
-        .accessibilityValue("\(usedPercent)%")
+        .accessibilityLabel(accessibilityDescription)
+        .accessibilityValue("\(Int(progress * 100))%")
     }
 }
 
