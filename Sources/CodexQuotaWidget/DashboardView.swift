@@ -125,7 +125,7 @@ struct DashboardView: View {
         } message: {
             Text("安装 Codex CLI 依赖 Node.js/npm。本机未检测到该运行环境，因此无法安全地继续。确认后会打开 Node.js 官方下载页；安装完成后回到本应用点击刷新即可继续。")
         }
-        // Keep the panel visually identical whether it currently has keyboard focus or not.
+        // 无论面板是否获得键盘焦点，都保持一致的视觉效果。
         .environment(\.controlActiveState, .inactive)
     }
 
@@ -237,9 +237,8 @@ private struct FloatingQuotaBall: View {
                         dragMouseOrigin = NSEvent.mouseLocation
                     }
                     guard let dragOrigin, let dragMouseOrigin else { return }
-                    // Use screen coordinates instead of value.translation. The
-                    // ball moves with the window, so local SwiftUI coordinates
-                    // shift underneath the pointer and can cause visible jumps.
+                    // 使用屏幕坐标而不是 value.translation。悬浮球会随窗口移动，
+                    // 局部 SwiftUI 坐标会在指针下方变化，从而造成明显跳动。
                     let mouseLocation = NSEvent.mouseLocation
                     let translation = CGSize(
                         width: mouseLocation.x - dragMouseOrigin.x,
@@ -725,8 +724,8 @@ private struct UsageHistoryCard: View {
                                         as: Date.self
                                     ), let bucket = nearestBucket(to: date) else { return }
 
-                                    // Hover events arrive for every pointer pixel. Changing state
-                                    // only when the closest day changes keeps the chart responsive.
+                                    // 指针每移动一个像素都会触发悬停事件；只有最近日期变化时才更新状态，
+                                    // 可以保持图表响应流畅。
                                     if selectedBucketID != bucket.id {
                                         var transaction = Transaction()
                                         transaction.animation = nil

@@ -40,8 +40,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var cancellables = Set<AnyCancellable>()
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        // Keep a Dock presence so the yellow traffic light can use the normal
-        // macOS miniaturize behavior and remain discoverable after minimizing.
+        // 保留 Dock 图标，让黄色窗口按钮使用 macOS 默认的最小化行为，
+        // 最小化后仍然可以方便地找回应用。
         NSApp.setActivationPolicy(.regular)
         configurePanel()
         configureStatusItem()
@@ -71,9 +71,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
-        // The floating ball owns its drag gesture. Letting NSPanel also move
-        // itself from the window background causes position updates to race
-        // during a drag and produces visible flicker.
+        // 悬浮球由自身手势负责拖动。如果同时允许 NSPanel 通过窗口背景移动，
+        // 拖动时会发生位置更新竞争，导致画面频闪。
+        // 展开面板则使用 AppKit 原生的窗口背景拖动。
         panel.isMovableByWindowBackground = false
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false
@@ -111,21 +111,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let targetMinimumSize = expands ? Self.expandedMinimumSize : Self.floatingBallSize
 
         let currentFrame = panel.frame
-        // Keep the panel's top-right anchor stable while switching between the
-        // circular floating state and the full dashboard.
-        let frame = NSRect(
-            x: currentFrame.maxX - targetSize.width,
-            y: currentFrame.maxY - targetSize.height,
-            width: targetSize.width,
-            height: targetSize.height
-        )
+        let frame: NSRect
+        let visibleFrame = panel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+        if expands {
+            // 立即贴着悬浮球的右下方展开；只有超出当前屏幕时才进行边界限制。
+            let desiredOrigin = NSPoint(
+                x: currentFrame.maxX,
+                y: currentFrame.minY - targetSize.height
+            )
+            let maxX = max(visibleFrame.minX, visibleFrame.maxX - targetSize.width)
+            let maxY = max(visibleFrame.minY, visibleFrame.maxY - targetSize.height)
+            frame = NSRect(
+                x: min(max(desiredOrigin.x, visibleFrame.minX), maxX),
+                y: min(max(desiredOrigin.y, visibleFrame.minY), maxY),
+                width: targetSize.width,
+                height: targetSize.height
+            )
+        } else {
+            // 黄色减号距离面板左边 41pt、距离顶部 23pt，
+            // 让悬浮球中心对齐到减号按钮中心。
+            let minusCenter = NSPoint(
+                x: currentFrame.minX + 41,
+                y: currentFrame.maxY - 23
+            )
+            frame = NSRect(
+                x: minusCenter.x - targetSize.width / 2,
+                y: minusCenter.y - targetSize.height / 2,
+                width: targetSize.width,
+                height: targetSize.height
+            )
+        }
 
         panel.minSize = targetMinimumSize
         panel.contentMinSize = targetMinimumSize
         panel.hasShadow = expands
+        panel.isMovableByWindowBackground = expands
         presentation.isExpanded = expands
 
-        // Apply one atomic resize so SwiftUI and NSPanel switch states together.
+        // 一次性调整窗口尺寸，让 SwiftUI 和 NSPanel 同步切换状态。
         panel.setFrame(frame, display: true, animate: false)
         presentation.updatePanelHeight(frame.height)
     }
