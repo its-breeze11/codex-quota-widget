@@ -20,6 +20,7 @@ final class FloatingPanel: NSPanel {
 
 final class PanelPresentation: ObservableObject {
     @Published var isExpanded = false
+    @Published var isChartVisible = true
     @Published private(set) var panelHeight: CGFloat = 350
 
     func updatePanelHeight(_ height: CGFloat) {
@@ -32,6 +33,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private static let floatingBallSize = NSSize(width: 60, height: 60)
     private static let expandedPanelSize = NSSize(width: 720, height: 350)
     private static let expandedMinimumSize = NSSize(width: 720, height: 350)
+    private static let collapsedPanelSize = NSSize(width: 360, height: 350)
+    private static let collapsedMinimumSize = NSSize(width: 320, height: 350)
 
     private let viewModel = DashboardViewModel()
     private let presentation = PanelPresentation()
@@ -82,7 +85,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             rootView: DashboardView(
                 viewModel: viewModel,
                 presentation: presentation,
-                togglePresentation: { [weak self] in self?.togglePresentation() }
+                togglePresentation: { [weak self] in self?.togglePresentation() },
+                toggleChart: { [weak self] in self?.toggleChart() }
             )
         )
         hostingView.wantsLayer = true
@@ -107,8 +111,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func togglePresentation() {
         guard let panel else { return }
         let expands = !presentation.isExpanded
-        let targetSize = expands ? Self.expandedPanelSize : Self.floatingBallSize
-        let targetMinimumSize = expands ? Self.expandedMinimumSize : Self.floatingBallSize
+        let targetSize: NSSize
+        let targetMinimumSize: NSSize
+        if expands {
+            if presentation.isChartVisible {
+                targetSize = Self.expandedPanelSize
+                targetMinimumSize = Self.expandedMinimumSize
+            } else {
+                targetSize = Self.collapsedPanelSize
+                targetMinimumSize = Self.collapsedMinimumSize
+            }
+        } else {
+            targetSize = Self.floatingBallSize
+            targetMinimumSize = Self.floatingBallSize
+        }
 
         let currentFrame = panel.frame
         let frame: NSRect
@@ -150,6 +166,40 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
         // 一次性调整窗口尺寸，让 SwiftUI 和 NSPanel 同步切换状态。
         panel.setFrame(frame, display: true, animate: false)
+        presentation.updatePanelHeight(frame.height)
+    }
+
+    private func toggleChart() {
+        guard let panel, presentation.isExpanded else { return }
+        let showsChart = !presentation.isChartVisible
+        let targetWidth = showsChart
+            ? Self.expandedPanelSize.width
+            : Self.collapsedPanelSize.width
+        let minWidth = showsChart
+            ? Self.expandedMinimumSize.width
+            : Self.collapsedMinimumSize.width
+
+        let visibleFrame = panel.screen?.visibleFrame
+            ?? NSScreen.main?.visibleFrame
+            ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+
+        var frame = panel.frame
+        if showsChart {
+            // 向右扩展；若超出屏幕右边界则向左收回。
+            frame.size.width = targetWidth
+            if frame.maxX > visibleFrame.maxX {
+                frame.origin.x = visibleFrame.maxX - targetWidth
+            }
+        } else {
+            // 从右侧收起，保持左边缘不动。
+            frame.size.width = targetWidth
+        }
+        frame.origin.x = max(frame.origin.x, visibleFrame.minX)
+
+        panel.minSize = NSSize(width: minWidth, height: panel.minSize.height)
+        panel.contentMinSize = NSSize(width: minWidth, height: panel.contentMinSize.height)
+        presentation.isChartVisible = showsChart
+        panel.setFrame(frame, display: true, animate: true)
         presentation.updatePanelHeight(frame.height)
     }
 

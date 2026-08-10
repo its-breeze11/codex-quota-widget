@@ -5,6 +5,9 @@ struct DashboardView: View {
     @ObservedObject var viewModel: DashboardViewModel
     @ObservedObject var presentation: PanelPresentation
     let togglePresentation: () -> Void
+    let toggleChart: () -> Void
+
+    private let versionString = "2.0.1-20260810-rex"
 
     var body: some View {
         if presentation.isExpanded {
@@ -24,7 +27,7 @@ struct DashboardView: View {
 
             if let snapshot = viewModel.snapshot {
                 GeometryReader { geometry in
-                    let leftWidth = presentation.isExpanded
+                    let leftWidth = presentation.isChartVisible
                         ? min(max(geometry.size.width * 0.4, 280), 350)
                         : geometry.size.width
 
@@ -34,7 +37,7 @@ struct DashboardView: View {
                                 .frame(width: leftWidth)
                                 .frame(maxHeight: .infinity)
 
-                            if presentation.isExpanded {
+                            if presentation.isChartVisible {
                                 UsageHistoryCard(
                                     history: viewModel.history,
                                     todayLocalTokens: viewModel.todayLocalTokens,
@@ -50,7 +53,7 @@ struct DashboardView: View {
 
                         presentationToggle
                             .position(
-                                x: presentation.isExpanded ? leftWidth + 7 : geometry.size.width - 13,
+                                x: presentation.isChartVisible ? leftWidth + 7 : geometry.size.width - 13,
                                 y: geometry.size.height / 2
                             )
                     }
@@ -86,8 +89,8 @@ struct DashboardView: View {
                 .padding(.bottom, 6)
         }
         .frame(
-            minWidth: presentation.isExpanded ? 720 : 360,
-            idealWidth: presentation.isExpanded ? 720 : 360,
+            minWidth: presentation.isChartVisible ? 720 : 320,
+            idealWidth: presentation.isChartVisible ? 720 : 360,
             maxWidth: .infinity,
             minHeight: 350,
             idealHeight: 350,
@@ -141,14 +144,14 @@ struct DashboardView: View {
     }
 
     private var presentationToggle: some View {
-        Button(action: togglePresentation) {
-            Text(presentation.isExpanded ? "<<" : ">>")
+        Button(action: toggleChart) {
+            Text(presentation.isChartVisible ? "<<" : ">>")
                 .font(.system(size: 11, weight: .medium, design: .rounded))
                 .foregroundStyle(UsagePalette.blue.opacity(0.82))
                 .frame(width: 20, height: 20)
         }
         .buttonStyle(.plain)
-        .help(presentation.isExpanded ? "收起图表" : "展开图表")
+        .help(presentation.isChartVisible ? "收起图表" : "展开图表")
     }
 
     private var header: some View {
@@ -169,6 +172,13 @@ struct DashboardView: View {
                 ProgressView().controlSize(.small)
             }
             Button {
+                togglePresentation()
+            } label: {
+                Image(systemName: "circle.circle.fill")
+            }
+            .buttonStyle(.plain)
+            .help("切换为悬浮球")
+            Button {
                 viewModel.refresh()
             } label: {
                 Image(systemName: "arrow.clockwise")
@@ -184,6 +194,8 @@ struct DashboardView: View {
 
     private var footer: some View {
         HStack(spacing: 12) {
+            Text(versionString)
+                .monospacedDigit()
             Spacer(minLength: 0)
             if let date = viewModel.lastUpdated {
                 Text("更新于 \(date.formatted(date: .omitted, time: .shortened))")
