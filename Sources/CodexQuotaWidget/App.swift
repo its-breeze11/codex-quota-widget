@@ -130,10 +130,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         let frame: NSRect
         let visibleFrame = panel.screen?.visibleFrame ?? NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
         if expands {
-            // 立即贴着悬浮球的右下方展开；只有超出当前屏幕时才进行边界限制。
+            // 展开是收起的逆操作：让面板减号按钮中心与悬浮球中心对齐。
+            // 减号按钮距面板左边缘 41pt、距顶部 23pt。
+            let ballCenter = NSPoint(
+                x: currentFrame.midX,
+                y: currentFrame.midY
+            )
             let desiredOrigin = NSPoint(
-                x: currentFrame.maxX,
-                y: currentFrame.minY - targetSize.height
+                x: ballCenter.x - 41,
+                y: ballCenter.y + 23 - targetSize.height
             )
             let maxX = max(visibleFrame.minX, visibleFrame.maxX - targetSize.width)
             let maxY = max(visibleFrame.minY, visibleFrame.maxY - targetSize.height)

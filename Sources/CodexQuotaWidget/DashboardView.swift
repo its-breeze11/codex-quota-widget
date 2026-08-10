@@ -7,7 +7,15 @@ struct DashboardView: View {
     let togglePresentation: () -> Void
     let toggleChart: () -> Void
 
-    private let versionString = "2.0.1-20260810-rex"
+    private var versionString: String {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
+        let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
+        let hash = Bundle.main.object(forInfoDictionaryKey: "GitCommitHash") as? String
+        if let hash, !hash.isEmpty, hash != "?" {
+            return "\(version) (\(build)) \(hash)"
+        }
+        return "\(version) (\(build))"
+    }
 
     var body: some View {
         if presentation.isExpanded {
