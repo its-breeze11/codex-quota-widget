@@ -7,6 +7,17 @@ struct DashboardView: View {
     let togglePresentation: () -> Void
 
     var body: some View {
+        if presentation.isExpanded {
+            expandedContent
+        } else {
+            FloatingQuotaBall(
+                viewModel: viewModel,
+                expand: togglePresentation
+            )
+        }
+    }
+
+    private var expandedContent: some View {
         VStack(spacing: 0) {
             header
             Divider().opacity(0.45)
@@ -142,7 +153,7 @@ struct DashboardView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            WindowTrafficLights()
+            WindowTrafficLights(collapse: togglePresentation)
             Image(systemName: "terminal.fill")
                 .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(UsagePalette.blue)
@@ -188,14 +199,176 @@ struct DashboardView: View {
     }
 }
 
+private struct FloatingQuotaBall: View {
+    @ObservedObject var viewModel: DashboardViewModel
+    let expand: () -> Void
+    @State private var dragOrigin: NSPoint?
+    @State private var dragMouseOrigin: NSPoint?
+    @State private var hasMoved = false
+
+    var body: some View {
+        ZStack {
+            if let remaining = viewModel.primaryRemainingPercent {
+                LiquidGlassSphere(
+                    level: CGFloat(remaining) / 100,
+                    label: "\(remaining)%",
+                    baseColor: QuotaProgressColors.color(for: remaining)
+                )
+            } else if viewModel.isRefreshing || viewModel.isInstallingCLI {
+                LiquidGlassSphere(level: 0.18, label: nil, baseColor: UsagePalette.blue)
+                    .overlay { ProgressView().controlSize(.small).tint(.white) }
+            } else {
+                LiquidGlassSphere(level: 0.12, label: nil, baseColor: UsagePalette.blue)
+                    .overlay {
+                        Image(systemName: "gauge.with.dots.needle.33percent")
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundStyle(.white)
+                    }
+            }
+        }
+        .frame(width: 60, height: 60)
+        .contentShape(Circle())
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in
+                    guard let panel = floatingPanel else { return }
+                    if dragOrigin == nil {
+                        dragOrigin = panel.frame.origin
+                        dragMouseOrigin = NSEvent.mouseLocation
+                    }
+                    guard let dragOrigin, let dragMouseOrigin else { return }
+                    // Use screen coordinates instead of value.translation. The
+                    // ball moves with the window, so local SwiftUI coordinates
+                    // shift underneath the pointer and can cause visible jumps.
+                    let mouseLocation = NSEvent.mouseLocation
+                    let translation = CGSize(
+                        width: mouseLocation.x - dragMouseOrigin.x,
+                        height: mouseLocation.y - dragMouseOrigin.y
+                    )
+                    if abs(translation.width) > 3 || abs(translation.height) > 3 {
+                        hasMoved = true
+                    }
+                    guard hasMoved else { return }
+                    panel.setFrameOrigin(
+                        NSPoint(
+                            x: dragOrigin.x + translation.width,
+                            y: dragOrigin.y + translation.height
+                        )
+                    )
+                }
+                .onEnded { _ in
+                    if !hasMoved {
+                        expand()
+                    }
+                    dragOrigin = nil
+                    dragMouseOrigin = nil
+                    hasMoved = false
+                }
+        )
+        .accessibilityAddTraits(.isButton)
+        .help("点击展开，拖动移动悬浮球")
+        .preferredColorScheme(.dark)
+    }
+
+    private var floatingPanel: NSWindow? {
+        NSApp.windows.first { $0 is FloatingPanel }
+    }
+}
+
+private struct LiquidGlassSphere: View {
+    let level: CGFloat
+    let label: String?
+    let baseColor: Color
+
+    var body: some View {
+        ZStack {
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [baseColor.opacity(0.96), baseColor.opacity(0.62)],
+                        center: .topLeading,
+                        startRadius: 2,
+                        endRadius: 38
+                    )
+                )
+                .shadow(color: Color.blue.opacity(0.28), radius: 7, y: 3)
+
+            WaterFillShape(level: level)
+                .fill(
+                    LinearGradient(
+                        colors: [baseColor.opacity(0.92), baseColor.opacity(0.68)],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .overlay {
+                    WaterFillShape(level: level)
+                        .stroke(Color.white.opacity(0.35), lineWidth: 0.7)
+                }
+                .clipShape(Circle())
+
+            Circle()
+                .fill(
+                    LinearGradient(
+                        colors: [.white.opacity(0.28), .clear, .black.opacity(0.24)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .blendMode(.screen)
+
+            Circle()
+                .strokeBorder(
+                    LinearGradient(
+                        colors: [.white.opacity(0.66), Color.blue.opacity(0.55), .white.opacity(0.18)],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ),
+                    lineWidth: 1.2
+                )
+
+            if let label {
+                Text(label)
+                    .font(.system(size: 16, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(.white)
+                    .shadow(color: .black.opacity(0.55), radius: 1, y: 1)
+            }
+        }
+    }
+}
+
+private struct WaterFillShape: Shape {
+    let level: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        let clampedLevel = min(max(level, 0), 1)
+        let waterline = rect.maxY - rect.height * clampedLevel
+        let waveHeight = max(1.5, rect.height * 0.035)
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: waterline))
+        path.addCurve(
+            to: CGPoint(x: rect.maxX, y: waterline),
+            control1: CGPoint(x: rect.width * 0.3, y: waterline - waveHeight),
+            control2: CGPoint(x: rect.width * 0.7, y: waterline + waveHeight)
+        )
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.closeSubpath()
+        return path
+    }
+}
+
 private struct WindowTrafficLights: View {
+    let collapse: () -> Void
+
     var body: some View {
         HStack(spacing: 7) {
             trafficLight(color: .red, symbol: "xmark", help: "关闭窗口") {
                 widgetPanel?.orderOut(nil)
             }
-            trafficLight(color: .yellow, symbol: "minus", help: "最小化到 Dock") {
-                widgetPanel?.miniaturize(nil)
+            trafficLight(color: .yellow, symbol: "minus", help: "收起为悬浮球") {
+                collapse()
             }
             trafficLight(color: .green, symbol: "plus", help: "缩放窗口") {
                 widgetPanel?.zoom(nil)
@@ -280,6 +453,12 @@ private struct QuotaCard: View {
     }
 
     private func progressColor(for remaining: Int) -> Color {
+        QuotaProgressColors.color(for: remaining)
+    }
+}
+
+private enum QuotaProgressColors {
+    static func color(for remaining: Int) -> Color {
         switch remaining {
         case 90...:
             return UsagePalette.quotaBrightGreen

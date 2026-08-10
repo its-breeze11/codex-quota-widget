@@ -29,12 +29,8 @@ final class PanelPresentation: ObservableObject {
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
-    private static let collapsedPanelSize = NSSize(width: 360, height: 350)
-    private static let presentationWidthDelta: CGFloat = 360
-    // This dashboard is designed as a two-column surface. Keep enough room for
-    // the history chart and its footer instead of falling back to a vertically
-    // scrolling layout or allowing the app footer to overlap card content.
-    private static let collapsedMinimumSize = NSSize(width: 360, height: 350)
+    private static let floatingBallSize = NSSize(width: 60, height: 60)
+    private static let expandedPanelSize = NSSize(width: 720, height: 350)
     private static let expandedMinimumSize = NSSize(width: 720, height: 350)
 
     private let viewModel = DashboardViewModel()
@@ -64,28 +60,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     private func configurePanel() {
         let panel = FloatingPanel(
-            contentRect: NSRect(origin: .zero, size: Self.collapsedPanelSize),
+            contentRect: NSRect(origin: .zero, size: Self.floatingBallSize),
             styleMask: [.borderless, .nonactivatingPanel, .resizable, .miniaturizable],
             backing: .buffered,
             defer: false
         )
-        panel.minSize = Self.collapsedMinimumSize
-        panel.contentMinSize = Self.collapsedMinimumSize
+        panel.minSize = Self.floatingBallSize
+        panel.contentMinSize = Self.floatingBallSize
         panel.level = .floating
         panel.isOpaque = false
         panel.backgroundColor = .clear
-        panel.hasShadow = true
-        panel.isMovableByWindowBackground = true
+        panel.hasShadow = false
+        // The floating ball owns its drag gesture. Letting NSPanel also move
+        // itself from the window background causes position updates to race
+        // during a drag and produces visible flicker.
+        panel.isMovableByWindowBackground = false
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.contentView = NSHostingView(
+        let hostingView = NSHostingView(
             rootView: DashboardView(
                 viewModel: viewModel,
                 presentation: presentation,
                 togglePresentation: { [weak self] in self?.togglePresentation() }
             )
         )
+        hostingView.wantsLayer = true
+        hostingView.layer?.isOpaque = false
+        hostingView.layer?.backgroundColor = NSColor.clear.cgColor
+        panel.contentView = hostingView
         panel.delegate = self
 
         if let screen = NSScreen.main {
@@ -104,23 +107,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func togglePresentation() {
         guard let panel else { return }
         let expands = !presentation.isExpanded
-        let targetMinimumSize = expands ? Self.expandedMinimumSize : Self.collapsedMinimumSize
+        let targetSize = expands ? Self.expandedPanelSize : Self.floatingBallSize
+        let targetMinimumSize = expands ? Self.expandedMinimumSize : Self.floatingBallSize
 
-        var frame = panel.frame
-        // Keep the user's manual height and extra width. Expanding only adds the
-        // right-hand history column; collapsing removes that same width again,
-        // while the left edge remains fixed.
-        frame.size.width = expands
-            ? max(frame.size.width + Self.presentationWidthDelta, Self.expandedMinimumSize.width)
-            : max(frame.size.width - Self.presentationWidthDelta, Self.collapsedMinimumSize.width)
+        let currentFrame = panel.frame
+        // Keep the panel's top-right anchor stable while switching between the
+        // circular floating state and the full dashboard.
+        let frame = NSRect(
+            x: currentFrame.maxX - targetSize.width,
+            y: currentFrame.maxY - targetSize.height,
+            width: targetSize.width,
+            height: targetSize.height
+        )
 
         panel.minSize = targetMinimumSize
         panel.contentMinSize = targetMinimumSize
+        panel.hasShadow = expands
         presentation.isExpanded = expands
 
-        // Animating both NSPanel's frame and SwiftUI's conditional right column
-        // causes a visible second layout bounce while collapsing. Apply one
-        // atomic resize instead.
+        // Apply one atomic resize so SwiftUI and NSPanel switch states together.
         panel.setFrame(frame, display: true, animate: false)
         presentation.updatePanelHeight(frame.height)
     }
