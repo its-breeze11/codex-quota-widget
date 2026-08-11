@@ -18,10 +18,18 @@ final class FloatingPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
+enum PanelMode {
+    case ball
+    case panel
+    case progress
+}
+
 final class PanelPresentation: ObservableObject {
-    @Published var isExpanded = false
+    @Published var mode: PanelMode = .ball
     @Published var isChartVisible = true
     @Published private(set) var panelHeight: CGFloat = 350
+
+    var isExpanded: Bool { mode == .panel }
 
     func updatePanelHeight(_ height: CGFloat) {
         panelHeight = height
@@ -35,6 +43,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private static let expandedMinimumSize = NSSize(width: 720, height: 350)
     private static let collapsedPanelSize = NSSize(width: 360, height: 350)
     private static let collapsedMinimumSize = NSSize(width: 320, height: 350)
+    private static let progressBarSize = NSSize(width: 640, height: 16)
+    private static let progressBarMinSize = NSSize(width: 320, height: 16)
+    private static let progressBarMaxSize = NSSize(width: 2000, height: 16)
 
     private let viewModel = DashboardViewModel()
     private let presentation = PanelPresentation()
@@ -86,7 +97,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 viewModel: viewModel,
                 presentation: presentation,
                 togglePresentation: { [weak self] in self?.togglePresentation() },
-                toggleChart: { [weak self] in self?.toggleChart() }
+                toggleChart: { [weak self] in self?.toggleChart() },
+                toggleProgressBar: { [weak self] in self?.toggleProgressBar() }
             )
         )
         hostingView.wantsLayer = true
@@ -109,8 +121,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     private func togglePresentation() {
-        guard let panel else { return }
-        let expands = !presentation.isExpanded
+        guard let panel, presentation.mode != .progress else { return }
+        let expands = presentation.mode == .ball
         let targetSize: NSSize
         let targetMinimumSize: NSSize
         if expands {
@@ -164,10 +176,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
 
         panel.minSize = targetMinimumSize
+        panel.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         panel.contentMinSize = targetMinimumSize
         panel.hasShadow = expands
         panel.isMovableByWindowBackground = expands
-        presentation.isExpanded = expands
+        presentation.mode = expands ? .panel : .ball
 
         // 一次性调整窗口尺寸，让 SwiftUI 和 NSPanel 同步切换状态。
         panel.setFrame(frame, display: true, animate: false)
@@ -206,6 +219,67 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         presentation.isChartVisible = showsChart
         panel.setFrame(frame, display: true, animate: true)
         presentation.updatePanelHeight(frame.height)
+    }
+
+    private func toggleProgressBar() {
+        guard let panel else { return }
+        let visibleFrame = panel.screen?.visibleFrame
+            ?? NSScreen.main?.visibleFrame
+            ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
+
+        if presentation.mode == .panel {
+            // 页面态 → 进度态：进度条在面板上方，水平居中
+            let targetSize = Self.progressBarSize
+            let currentFrame = panel.frame
+            let desiredOrigin = NSPoint(
+                x: currentFrame.midX - targetSize.width / 2,
+                y: currentFrame.maxY + 8
+            )
+            let maxX = max(visibleFrame.minX, visibleFrame.maxX - targetSize.width)
+            let frame = NSRect(
+                x: min(max(desiredOrigin.x, visibleFrame.minX), maxX),
+                y: min(desiredOrigin.y, visibleFrame.maxY - targetSize.height),
+                width: targetSize.width,
+                height: targetSize.height
+            )
+            panel.minSize = Self.progressBarMinSize
+            panel.maxSize = Self.progressBarMaxSize
+            panel.contentMinSize = Self.progressBarMinSize
+            panel.hasShadow = true
+            panel.isMovableByWindowBackground = false
+            presentation.mode = .progress
+            panel.setFrame(frame, display: true, animate: false)
+            presentation.updatePanelHeight(frame.height)
+        } else if presentation.mode == .progress {
+            // 进度态 → 页面态：面板在进度条下方，水平居中
+            let targetSize = presentation.isChartVisible
+                ? Self.expandedPanelSize
+                : Self.collapsedPanelSize
+            let targetMinSize = presentation.isChartVisible
+                ? Self.expandedMinimumSize
+                : Self.collapsedMinimumSize
+            let currentFrame = panel.frame
+            let desiredOrigin = NSPoint(
+                x: currentFrame.midX - targetSize.width / 2,
+                y: currentFrame.minY - 8 - targetSize.height
+            )
+            let maxX = max(visibleFrame.minX, visibleFrame.maxX - targetSize.width)
+            let maxY = max(visibleFrame.minY, visibleFrame.maxY - targetSize.height)
+            let frame = NSRect(
+                x: min(max(desiredOrigin.x, visibleFrame.minX), maxX),
+                y: min(max(desiredOrigin.y, visibleFrame.minY), maxY),
+                width: targetSize.width,
+                height: targetSize.height
+            )
+            panel.minSize = targetMinSize
+            panel.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+            panel.contentMinSize = targetMinSize
+            panel.hasShadow = true
+            panel.isMovableByWindowBackground = true
+            presentation.mode = .panel
+            panel.setFrame(frame, display: true, animate: false)
+            presentation.updatePanelHeight(frame.height)
+        }
     }
 
     func windowDidResize(_ notification: Notification) {

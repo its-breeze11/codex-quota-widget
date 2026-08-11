@@ -6,24 +6,31 @@ struct DashboardView: View {
     @ObservedObject var presentation: PanelPresentation
     let togglePresentation: () -> Void
     let toggleChart: () -> Void
+    let toggleProgressBar: () -> Void
 
     private var versionString: String {
+        if let full = Bundle.main.object(forInfoDictionaryKey: "FullVersionString") as? String,
+           !full.isEmpty {
+            return full
+        }
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
         let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "?"
-        let hash = Bundle.main.object(forInfoDictionaryKey: "GitCommitHash") as? String
-        if let hash, !hash.isEmpty, hash != "?" {
-            return "\(version) (\(build)) \(hash)"
-        }
         return "\(version) (\(build))"
     }
 
     var body: some View {
-        if presentation.isExpanded {
-            expandedContent
-        } else {
+        switch presentation.mode {
+        case .ball:
             FloatingQuotaBall(
                 viewModel: viewModel,
                 expand: togglePresentation
+            )
+        case .panel:
+            expandedContent
+        case .progress:
+            FloatingProgressBar(
+                viewModel: viewModel,
+                switchToPanel: toggleProgressBar
             )
         }
     }
@@ -187,6 +194,13 @@ struct DashboardView: View {
             .buttonStyle(.plain)
             .help("切换为悬浮球")
             Button {
+                toggleProgressBar()
+            } label: {
+                Image(systemName: "capsule.fill")
+            }
+            .buttonStyle(.plain)
+            .help("切换为进度条")
+            Button {
                 viewModel.refresh()
             } label: {
                 Image(systemName: "arrow.clockwise")
@@ -292,6 +306,126 @@ private struct FloatingQuotaBall: View {
     private var floatingPanel: NSWindow? {
         NSApp.windows.first { $0 is FloatingPanel }
     }
+}
+
+private struct FloatingProgressBar: View {
+    @ObservedObject var viewModel: DashboardViewModel
+    let switchToPanel: () -> Void
+    @State private var dragOrigin: NSPoint?
+    @State private var dragMouseOrigin: NSPoint?
+    @State private var hasMoved = false
+
+    private var remaining: Int? {
+        viewModel.primaryRemainingPercent
+    }
+
+    private var fillRatio: CGFloat {
+        guard let r = remaining else { return 0.15 }
+        let displayed = r >= 50 ? r : 100 - r
+        return CGFloat(displayed) / 100
+    }
+
+    private var progressColor: Color {
+        guard let r = remaining else { return UsagePalette.blue }
+        return QuotaProgressColors.color(for: r)
+    }
+
+    private var percentageText: String {
+        guard let r = remaining else { return "--" }
+        return "\(r)%"
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack(alignment: .leading) {
+                FrostedTrack()
+                Capsule()
+                    .fill(progressColor.opacity(0.8))
+                    .frame(width: geo.size.width * fillRatio)
+                    .overlay(alignment: .top) {
+                        Capsule()
+                            .fill(
+                                LinearGradient(
+                                    colors: [.white.opacity(0.25), .clear],
+                                    startPoint: .top,
+                                    endPoint: .center
+                                )
+                            )
+                            .frame(width: geo.size.width * fillRatio)
+                            .clipShape(Capsule())
+                    }
+            }
+            .overlay(alignment: .trailing) {
+                Text(percentageText)
+                    .font(.system(size: 11, weight: .bold, design: .rounded))
+                    .monospacedDigit()
+                    .foregroundStyle(.white)
+                    .shadow(color: .black.opacity(0.6), radius: 2)
+                    .padding(.trailing, 8)
+            }
+        }
+        .frame(height: 16)
+        .clipShape(Capsule())
+        .contentShape(Capsule())
+        .gesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in
+                    guard let panel = floatingPanel else { return }
+                    if dragOrigin == nil {
+                        dragOrigin = panel.frame.origin
+                        dragMouseOrigin = NSEvent.mouseLocation
+                    }
+                    guard let dragOrigin, let dragMouseOrigin else { return }
+                    let mouseLocation = NSEvent.mouseLocation
+                    let translation = CGSize(
+                        width: mouseLocation.x - dragMouseOrigin.x,
+                        height: mouseLocation.y - dragMouseOrigin.y
+                    )
+                    if abs(translation.width) > 3 || abs(translation.height) > 3 {
+                        hasMoved = true
+                    }
+                    guard hasMoved else { return }
+                    panel.setFrameOrigin(
+                        NSPoint(
+                            x: dragOrigin.x + translation.width,
+                            y: dragOrigin.y + translation.height
+                        )
+                    )
+                }
+                .onEnded { _ in
+                    if !hasMoved {
+                        switchToPanel()
+                    }
+                    dragOrigin = nil
+                    dragMouseOrigin = nil
+                    hasMoved = false
+                }
+        )
+        .accessibilityAddTraits(.isButton)
+        .help("点击返回面板，拖动移动进度条")
+        .preferredColorScheme(.dark)
+    }
+
+    private var floatingPanel: NSWindow? {
+        NSApp.windows.first { $0 is FloatingPanel }
+    }
+}
+
+private struct FrostedTrack: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let view = NSVisualEffectView()
+        view.material = .toolTip
+        view.blendingMode = .behindWindow
+        view.state = .active
+        view.isEmphasized = false
+        view.wantsLayer = true
+        view.layer?.cornerRadius = 8
+        view.layer?.masksToBounds = true
+        view.layer?.borderWidth = 0
+        view.layer?.opacity = 0.2
+        return view
+    }
+    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
 }
 
 private struct LiquidGlassSphere: View {
