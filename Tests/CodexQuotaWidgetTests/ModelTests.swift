@@ -119,6 +119,21 @@ final class ModelTests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testPanelStartsCollapsedSoExpandingTheBallHidesTheChart() {
+        let presentation = PanelPresentation()
+
+        // 初始为悬浮球，且图表默认收起。
+        XCTAssertEqual(presentation.mode, .ball)
+        XCTAssertFalse(presentation.isChartVisible)
+        XCTAssertFalse(presentation.isExpanded)
+
+        // 悬浮球展开后进入面板态，图表仍保持折叠，">>" 才会展开图表。
+        presentation.mode = .panel
+        XCTAssertTrue(presentation.isExpanded)
+        XCTAssertFalse(presentation.isChartVisible)
+    }
+
     func testArchivePolicyLimitsAutomaticRepairToSevenCompletedDays() {
         let codexHistory = (12...19).map {
             DailyUsageBucket(startDate: "2026-07-\($0)", tokens: Int64($0))

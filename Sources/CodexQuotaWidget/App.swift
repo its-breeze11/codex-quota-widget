@@ -26,7 +26,8 @@ enum PanelMode {
 
 final class PanelPresentation: ObservableObject {
     @Published var mode: PanelMode = .ball
-    @Published var isChartVisible = true
+    // 悬浮球展开后默认进入折叠态（只显示额度列），由 ">>" 按钮再展开图表。
+    @Published var isChartVisible = false
     @Published private(set) var panelHeight: CGFloat = 350
 
     var isExpanded: Bool { mode == .panel }
