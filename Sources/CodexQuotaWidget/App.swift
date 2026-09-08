@@ -18,6 +18,22 @@ final class FloatingPanel: NSPanel {
     override var canBecomeMain: Bool { false }
 }
 
+/// NSHostingView 默认拒绝「首次点击」：应用不在前台时，落在悬浮球上的第一次点击
+/// 只被 AppKit 用来让面板成为 key window，不会下发给 SwiftUI 手势，
+/// 表现为必须先点一下、再按住才能拖动。重写后首次点击即可直接开始拖拽。
+private final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    required init(rootView: Content) {
+        super.init(rootView: rootView)
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+}
+
 enum PanelMode {
     case ball
     case panel
@@ -93,7 +109,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        let hostingView = NSHostingView(
+        let hostingView = FirstMouseHostingView(
             rootView: DashboardView(
                 viewModel: viewModel,
                 presentation: presentation,
