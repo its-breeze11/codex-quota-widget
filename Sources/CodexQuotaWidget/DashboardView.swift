@@ -574,15 +574,28 @@ private struct QuotaCard: View {
                 }
                 Spacer()
                 if let resetDate = bucket.primary?.resetDate {
-                    Label {
-                        Text(resetDate.yyyyMMddDashed)
-                            .monospacedDigit()
-                    } icon: {
-                        Image(systemName: "clock.arrow.circlepath")
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Label {
+                            Text(resetDate.yyyyMMddDashed)
+                                .monospacedDigit()
+                        } icon: {
+                            Image(systemName: "clock.arrow.circlepath")
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .help("重置时间：\(resetDate.formatted(date: .abbreviated, time: .shortened))")
+
+                        // 分钟级倒计时，每 60 秒本地走一格，与额度数据 60 秒刷新同频且不依赖网络。
+                        TimelineView(.periodic(
+                            from: Calendar.current.dateInterval(of: .minute, for: Date())?.start ?? Date(),
+                            by: 60
+                        )) { context in
+                            Text(ResetCountdownFormatter.string(resetDate: resetDate, now: context.date))
+                        }
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
                     }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .help("重置时间：\(resetDate.formatted(date: .abbreviated, time: .shortened))")
                 }
             }
 

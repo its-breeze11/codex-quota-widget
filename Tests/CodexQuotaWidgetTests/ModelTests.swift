@@ -64,6 +64,42 @@ final class ModelTests: XCTestCase {
         )
     }
 
+    func testResetCountdownFormatterUsesMinuteGranularityWithSpaces() {
+        let now = Date(timeIntervalSince1970: 1_000_000)
+
+        XCTAssertEqual(
+            ResetCountdownFormatter.string(
+                resetDate: now.addingTimeInterval(2 * 86_400 + 3 * 3_600 + 14 * 60),
+                now: now
+            ),
+            "2 天 3 时 14 分后重置"
+        )
+        XCTAssertEqual(
+            ResetCountdownFormatter.string(
+                resetDate: now.addingTimeInterval(3 * 3_600 + 14 * 60),
+                now: now
+            ),
+            "3 时 14 分后重置"
+        )
+        XCTAssertEqual(
+            ResetCountdownFormatter.string(resetDate: now.addingTimeInterval(14 * 60), now: now),
+            "14 分后重置"
+        )
+        // 不足 1 分钟按 1 分钟显示，已到/超过重置时间显示"重置中"。
+        XCTAssertEqual(
+            ResetCountdownFormatter.string(resetDate: now.addingTimeInterval(30), now: now),
+            "1 分后重置"
+        )
+        XCTAssertEqual(
+            ResetCountdownFormatter.string(resetDate: now, now: now),
+            "重置中"
+        )
+        XCTAssertEqual(
+            ResetCountdownFormatter.string(resetDate: now.addingTimeInterval(-100), now: now),
+            "重置中"
+        )
+    }
+
     func testRollingUsageWindowsUseTheSameDatesAndTotalsAsTheDashboard() {
         let history = [
             DailyUsageBucket(startDate: "2026-06-17", tokens: 17),

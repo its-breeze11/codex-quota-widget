@@ -20,6 +20,27 @@ struct RateLimitWindow: Codable, Equatable {
     }
 }
 
+/// 额度重置时间的分钟级倒计时文案，纯本地计算，由界面按分钟节拍驱动。
+enum ResetCountdownFormatter {
+    static func string(resetDate: Date, now: Date) -> String {
+        let remaining = resetDate.timeIntervalSince(now)
+        guard remaining > 0 else { return "重置中" }
+        // 分钟粒度向下取整；不足 1 分钟按 1 分钟显示，避免出现 "0 分后重置"。
+        let totalMinutes = max(1, Int(remaining / 60))
+        let days = totalMinutes / 1_440
+        let hours = (totalMinutes % 1_440) / 60
+        let minutes = totalMinutes % 60
+
+        if days > 0 {
+            return "\(days) 天 \(hours) 时 \(minutes) 分后重置"
+        }
+        if hours > 0 {
+            return "\(hours) 时 \(minutes) 分后重置"
+        }
+        return "\(minutes) 分后重置"
+    }
+}
+
 struct RateLimitSnapshot: Codable, Equatable, Identifiable {
     let limitId: String?
     let limitName: String?
