@@ -100,6 +100,19 @@ final class ModelTests: XCTestCase {
         )
     }
 
+    func testResetMomentIsFormattedToSecondsInCurrentTimeZone() {
+        let date = Date(timeIntervalSince1970: 1_789_824_917)
+
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
+
+        XCTAssertEqual(date.yyyyMMddHHmmss, formatter.string(from: date))
+        XCTAssertEqual(date.yyyyMMddHHmmss.count, 19)
+    }
+
     func testRollingUsageWindowsUseTheSameDatesAndTotalsAsTheDashboard() {
         let history = [
             DailyUsageBucket(startDate: "2026-06-17", tokens: 17),

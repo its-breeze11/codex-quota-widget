@@ -576,7 +576,7 @@ private struct QuotaCard: View {
                 if let resetDate = bucket.primary?.resetDate {
                     VStack(alignment: .trailing, spacing: 2) {
                         Label {
-                            Text(resetDate.yyyyMMddDashed)
+                            Text(resetDate.yyyyMMddHHmmss)
                                 .monospacedDigit()
                         } icon: {
                             Image(systemName: "clock.arrow.circlepath")

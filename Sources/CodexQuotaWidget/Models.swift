@@ -281,12 +281,26 @@ extension Date {
         Self.yyyyMMddDashedFormatter.string(from: self)
     }
 
+    /// 精确到秒的本地时刻，如 `2026-09-28 14:30:45`。
+    var yyyyMMddHHmmss: String {
+        Self.yyyyMMddHHmmssFormatter.string(from: self)
+    }
+
     private static let yyyyMMddDashedFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.timeZone = .current
         formatter.dateFormat = "yyyy-MM-dd"
+        return formatter
+    }()
+
+    private static let yyyyMMddHHmmssFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = .current
+        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
         return formatter
     }()
 }
