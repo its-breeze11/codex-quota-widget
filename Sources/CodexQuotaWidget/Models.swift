@@ -277,29 +277,16 @@ extension Int64 {
 }
 
 extension Date {
-    var yyyyMMddDashed: String {
-        Self.yyyyMMddDashedFormatter.string(from: self)
+    /// 固定东八区（UTC+8）、精确到秒的时刻，如 `2026-09-28 14:30:45`，不受系统时区影响。
+    var beijingDateTime: String {
+        Self.beijingDateTimeFormatter.string(from: self)
     }
 
-    /// 精确到秒的本地时刻，如 `2026-09-28 14:30:45`。
-    var yyyyMMddHHmmss: String {
-        Self.yyyyMMddHHmmssFormatter.string(from: self)
-    }
-
-    private static let yyyyMMddDashedFormatter: DateFormatter = {
+    private static let beijingDateTimeFormatter: DateFormatter = {
         let formatter = DateFormatter()
         formatter.calendar = Calendar(identifier: .gregorian)
         formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = .current
-        formatter.dateFormat = "yyyy-MM-dd"
-        return formatter
-    }()
-
-    private static let yyyyMMddHHmmssFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = .current
+        formatter.timeZone = TimeZone(secondsFromGMT: 8 * 60 * 60)
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
         return formatter
     }()

@@ -100,17 +100,11 @@ final class ModelTests: XCTestCase {
         )
     }
 
-    func testResetMomentIsFormattedToSecondsInCurrentTimeZone() {
+    func testResetMomentIsFormattedToSecondsInBeijingTime() {
+        // 固定东八区，与系统时区无关：1789824917 -> 2026-09-19 21:35:17（UTC+8）。
         let date = Date(timeIntervalSince1970: 1_789_824_917)
-
-        let formatter = DateFormatter()
-        formatter.calendar = Calendar(identifier: .gregorian)
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.timeZone = .current
-        formatter.dateFormat = "yyyy-MM-dd HH:mm:ss"
-
-        XCTAssertEqual(date.yyyyMMddHHmmss, formatter.string(from: date))
-        XCTAssertEqual(date.yyyyMMddHHmmss.count, 19)
+        XCTAssertEqual(date.beijingDateTime, "2026-09-19 21:35:17")
+        XCTAssertEqual(date.beijingDateTime.count, 19)
     }
 
     func testRollingUsageWindowsUseTheSameDatesAndTotalsAsTheDashboard() {

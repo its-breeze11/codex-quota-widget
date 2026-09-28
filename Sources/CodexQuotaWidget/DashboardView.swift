@@ -576,14 +576,14 @@ private struct QuotaCard: View {
                 if let resetDate = bucket.primary?.resetDate {
                     VStack(alignment: .trailing, spacing: 2) {
                         Label {
-                            Text(resetDate.yyyyMMddHHmmss)
+                            Text(resetDate.beijingDateTime)
                                 .monospacedDigit()
                         } icon: {
                             Image(systemName: "clock.arrow.circlepath")
                         }
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                        .help("重置时间：\(resetDate.formatted(date: .abbreviated, time: .shortened))")
+                        .help("重置时间（东八区）：\(resetDate.beijingDateTime)")
 
                         // 分钟级倒计时，每 60 秒本地走一格，与额度数据 60 秒刷新同频且不依赖网络。
                         TimelineView(.periodic(
@@ -720,9 +720,9 @@ private struct ResetCreditsCard: View {
                             .lineLimit(1)
                         Spacer()
                         if let expiration = credit.expirationDate {
-                            Text(expiration.yyyyMMddDashed)
+                            Text(expiration.beijingDateTime)
                                 .monospacedDigit()
-                                .help("到期：\(expiration.formatted(date: .abbreviated, time: .shortened))")
+                                .help("到期（东八区）：\(expiration.beijingDateTime)")
                         } else {
                             Text("未提供到期时间")
                         }
