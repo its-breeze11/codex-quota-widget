@@ -5,6 +5,8 @@ enum CodexClientError: LocalizedError {
     case executableNotFound
     case npmNotFound
     case installationFailed(Int32)
+    case installationTimedOut
+    case responseTooLarge
     case launchFailed(String)
     case connectionClosed
     case requestTimedOut
@@ -19,6 +21,10 @@ enum CodexClientError: LocalizedError {
             return "未检测到 Node.js/npm，暂时无法安装 Codex CLI。"
         case .installationFailed(let status):
             return "Codex CLI 安装失败（退出码 \(status)）。请检查网络后重试。"
+        case .installationTimedOut:
+            return "Codex CLI 安装超时，安装进程已停止。可能留有部分文件，请检查安装状态后重试。"
+        case .responseTooLarge:
+            return "Codex 返回的数据超过读取上限，本次刷新已停止。"
         case .launchFailed(let message):
             return "无法启动 Codex App Server：\(message)"
         case .connectionClosed:
@@ -37,72 +43,130 @@ struct CodexAppServerClient {
     /// Keep the executable installed by the widget reproducible. Upgrades are
     /// intentional source changes instead of a moving `latest` tag.
     private static let codexCLIVersion = "0.146.0"
+    private let executableOverride: URL?
+    private let argumentPrefix: [String]
+    private let requestTimeout: TimeInterval
+    private let maximumResponseLineBytes: Int
+    private let maximumResponseBytes: Int
+    private let installationOperation: @Sendable () throws -> Void
+
+    init(
+        executableURL: URL? = nil, argumentPrefix: [String] = [], requestTimeout: TimeInterval = 15,
+        installationOperation: (@Sendable () throws -> Void)? = nil,
+        maximumResponseLineBytes: Int = 8 * 1024 * 1024, maximumResponseBytes: Int = 32 * 1024 * 1024
+    ) {
+        executableOverride = executableURL
+        self.argumentPrefix = argumentPrefix
+        self.requestTimeout = requestTimeout
+        self.maximumResponseLineBytes = maximumResponseLineBytes
+        self.maximumResponseBytes = maximumResponseBytes
+        self.installationOperation = installationOperation ?? { try Self.installBlocking() }
+    }
 
     func fetchSnapshot() async throws -> DashboardSnapshot {
-        try await Task.detached(priority: .utility) {
-            try Self.fetchWithRetry()
-        }.value
+        try Task.checkCancellation()
+        let worker = Task.detached(priority: .utility) { try await self.fetchWithRetry() }
+        return try await withTaskCancellationHandler(operation: {
+            let snapshot = try await worker.value
+            try Task.checkCancellation()
+            return snapshot
+        }, onCancel: { worker.cancel() })
     }
 
     /// Installs the CLI into the current user's home directory. This deliberately
     /// avoids `sudo` and never changes a system-wide Node installation.
     func installCLI() async throws {
-        try await Task.detached(priority: .utility) {
-            let npmURL: URL
-            do {
-                npmURL = try Self.locateExecutable(named: "npm")
-            } catch {
-                throw CodexClientError.npmNotFound
-            }
-            let home = FileManager.default.homeDirectoryForCurrentUser
-            let process = Process()
-            process.executableURL = npmURL
-            process.arguments = [
-                "install",
-                "--global",
-                "--prefix", home.appendingPathComponent(".local").path,
-                "@openai/codex@\(Self.codexCLIVersion)"
-            ]
-            // npm can emit a large progress log. It is intentionally discarded so
-            // its pipe cannot block the installation process.
-            process.standardOutput = FileHandle.nullDevice
-            process.standardError = FileHandle.nullDevice
+        try Task.checkCancellation()
+        let worker = Task.detached(priority: .utility) {
+            try Task.checkCancellation()
+            try self.installationOperation()
+        }
+        try await withTaskCancellationHandler(operation: {
+            try await worker.value
+            try Task.checkCancellation()
+        }, onCancel: { worker.cancel() })
+    }
 
-            do {
-                try process.run()
-            } catch {
-                throw CodexClientError.npmNotFound
-            }
-            process.waitUntilExit()
+    private static func installBlocking() throws {
+        try Task.checkCancellation()
+        let npmURL: URL
+        do {
+            npmURL = try locateExecutable(named: "npm")
+        } catch {
+            throw CodexClientError.npmNotFound
+        }
+        let prefix = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".local")
+        try runInstaller(executableURL: npmURL, prefix: prefix) {
+            installedExecutable(at: prefix) != nil
+        }
+    }
 
-            guard process.terminationStatus == 0 else {
-                throw CodexClientError.installationFailed(process.terminationStatus)
-            }
-            guard (try? Self.locateCodexExecutable()) != nil else {
-                throw CodexClientError.installationFailed(process.terminationStatus)
-            }
-        }.value
+    /// Blocking worker port. Tests supply only a temporary fake executable,
+    /// prefix and readiness check. The application calls it only after consent.
+    static func installedExecutable(at prefix: URL) -> URL? {
+        let executable = prefix.appendingPathComponent("bin/codex")
+        let resolvedExecutable = executable.resolvingSymlinksInPath().standardizedFileURL
+        let resolvedPrefix = prefix.resolvingSymlinksInPath().standardizedFileURL.path + "/"
+        guard resolvedExecutable.path.hasPrefix(resolvedPrefix),
+            (try? resolvedExecutable.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true,
+            FileManager.default.isExecutableFile(atPath: executable.path) else { return nil }
+        return executable
+    }
+
+    static func runInstaller(
+        executableURL: URL, prefix: URL, timeout: TimeInterval = 300, isInstalled: () -> Bool
+    ) throws {
+        try Task.checkCancellation()
+        let session: CLIProcessSession
+        do {
+            session = try CLIProcessSession(
+                executableURL: executableURL,
+                arguments: [
+                    "install", "--global", "--prefix", prefix.path,
+                    "@openai/codex@\(codexCLIVersion)"
+                ],
+                // Installation has its own five-minute budget, independent of RPC.
+                timeout: timeout, captureOutput: false, pipeInput: false
+            )
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch CodexClientError.requestTimedOut {
+            throw CodexClientError.installationTimedOut
+        } catch {
+            throw CodexClientError.npmNotFound
+        }
+        defer { session.close() }
+        let status: Int32
+        do { status = try session.waitForExitStatus() }
+        catch CodexClientError.requestTimedOut { throw CodexClientError.installationTimedOut }
+        guard status == 0 else { throw CodexClientError.installationFailed(status) }
+        try Task.checkCancellation()
+        guard isInstalled() else { throw CodexClientError.installationFailed(status) }
     }
 
     /// `codex login` owns the interactive browser authorization.  Its status
     /// command is intentionally used only as a post-login readiness check; the
     /// widget never reads or stores the resulting credential.
     func isLoggedIn() async -> Bool {
-        await Task.detached(priority: .utility) {
-            guard let executable = try? Self.locateCodexExecutable() else { return false }
-            let process = Process()
-            process.executableURL = executable
-            process.arguments = ["login", "status"]
-            process.standardOutput = FileHandle.nullDevice
-            process.standardError = FileHandle.nullDevice
+        guard !Task.isCancelled else { return false }
+        let worker = Task.detached(priority: .utility) {
             do {
-                try process.run()
-                process.waitUntilExit()
-                return process.terminationStatus == 0
-            } catch {
-                return false
-            }
-        }.value
+                try Task.checkCancellation()
+                let executable = try executableOverride ?? Self.locateCodexExecutable()
+                let session = try CLIProcessSession(
+                    executableURL: executable,
+                    arguments: argumentPrefix + ["login", "status"],
+                    timeout: requestTimeout,
+                    captureOutput: false
+                )
+                defer { session.close() }
+                return try session.waitForExit()
+            } catch { return false }
+        }
+        return await withTaskCancellationHandler(operation: {
+            let result = await worker.value
+            return !Task.isCancelled && result
+        }, onCancel: { worker.cancel() })
     }
 
     /// Login is deliberately performed in Terminal so Codex receives a real
@@ -111,7 +175,7 @@ struct CodexAppServerClient {
     /// solely to start this user-visible command.
     func openLoginInTerminal() throws {
         let executable = try Self.locateCodexExecutable()
-        let command = Self.shellQuote(executable.path) + " login"
+        let command = Self.loginCommand(for: executable)
         let script = """
         tell application "Terminal"
             activate
@@ -129,51 +193,30 @@ struct CodexAppServerClient {
         NSWorkspace.shared.open(URL(string: "https://nodejs.org/en/download")!)
     }
 
-    private static func fetchWithRetry() throws -> DashboardSnapshot {
+    private func fetchWithRetry() async throws -> DashboardSnapshot {
         do {
             return try fetchBlocking()
         } catch CodexClientError.server {
             // The App Server occasionally returns a transient profile-read
             // failure while its ChatGPT session is refreshing. Retry once
             // before surfacing a stale-data warning to the widget.
-            Thread.sleep(forTimeInterval: 1)
+            try await Task.sleep(nanoseconds: 1_000_000_000)
             return try fetchBlocking()
         }
     }
 
-    private static func fetchBlocking() throws -> DashboardSnapshot {
-        let executableURL = try locateCodexExecutable()
-        let process = Process()
-        let inputPipe = Pipe()
-        let outputPipe = Pipe()
+    private func fetchBlocking() throws -> DashboardSnapshot {
+        try Task.checkCancellation()
+        let executableURL = try executableOverride ?? Self.locateCodexExecutable()
+        let session = try CLIProcessSession(
+            executableURL: executableURL,
+            arguments: argumentPrefix + ["app-server", "--stdio"],
+            timeout: requestTimeout,
+            maximumLineBytes: maximumResponseLineBytes, maximumOutputBytes: maximumResponseBytes
+        )
+        defer { session.close() }
 
-        process.executableURL = executableURL
-        process.arguments = ["app-server", "--stdio"]
-        process.standardInput = inputPipe
-        process.standardOutput = outputPipe
-        process.standardError = FileHandle.nullDevice
-
-        do {
-            try process.run()
-        } catch {
-            throw CodexClientError.launchFailed(error.localizedDescription)
-        }
-
-        let timeout = DispatchWorkItem {
-            if process.isRunning {
-                process.terminate()
-            }
-        }
-        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + 15, execute: timeout)
-
-        defer {
-            timeout.cancel()
-            try? inputPipe.fileHandleForWriting.close()
-            try? outputPipe.fileHandleForReading.close()
-            if process.isRunning { process.terminate() }
-        }
-
-        try send(
+        try session.send(
             [
                 "id": 1,
                 "method": "initialize",
@@ -184,25 +227,15 @@ struct CodexAppServerClient {
                     ],
                     "capabilities": ["experimentalApi": true]
                 ]
-            ],
-            to: inputPipe.fileHandleForWriting
+            ]
         )
 
-        var reader = JSONLineReader(handle: outputPipe.fileHandleForReading)
         var didInitialize = false
         var rateLimits: RateLimitsResponse?
         var usage: TokenUsageResponse?
 
         while rateLimits == nil || usage == nil {
-            guard let messageData = try reader.nextLine() else {
-                // `terminationReason` is only valid after an NSTask has fully
-                // exited. App Server can close stdout just before that state,
-                // and querying it then raises an Objective-C exception that
-                // aborts the entire widget instead of surfacing a retryable
-                // refresh error.
-                if process.isRunning {
-                    throw CodexClientError.requestTimedOut
-                }
+            guard let messageData = try session.nextLine() else {
                 throw CodexClientError.connectionClosed
             }
 
@@ -220,13 +253,14 @@ struct CodexAppServerClient {
 
             if id == 1, object["result"] != nil, !didInitialize {
                 didInitialize = true
-                try send(["method": "initialized"], to: inputPipe.fileHandleForWriting)
-                try send(["id": 2, "method": "account/rateLimits/read"], to: inputPipe.fileHandleForWriting)
-                try send(["id": 3, "method": "account/usage/read"], to: inputPipe.fileHandleForWriting)
+                try session.send(["method": "initialized"])
+                try session.send(["id": 2, "method": "account/rateLimits/read"])
+                try session.send(["id": 3, "method": "account/usage/read"])
                 continue
             }
 
-            guard let result = object["result"] else { continue }
+            guard id == 2 || id == 3, let result = object["result"] else { continue }
+            guard result is [String: Any] else { throw CodexClientError.malformedResponse }
             let resultData = try JSONSerialization.data(withJSONObject: result)
 
             switch id {
@@ -243,14 +277,7 @@ struct CodexAppServerClient {
             throw CodexClientError.malformedResponse
         }
 
-        try? inputPipe.fileHandleForWriting.close()
         return DashboardSnapshot(rateLimits: rateLimits, usage: usage, fetchedAt: Date())
-    }
-
-    private static func send(_ object: [String: Any], to handle: FileHandle) throws {
-        var data = try JSONSerialization.data(withJSONObject: object)
-        data.append(0x0A)
-        try handle.write(contentsOf: data)
     }
 
     private static func locateCodexExecutable() throws -> URL {
@@ -296,41 +323,17 @@ struct CodexAppServerClient {
         throw CodexClientError.executableNotFound
     }
 
+    static func loginCommand(for executable: URL) -> String {
+        shellQuote(executable.path) + " login"
+    }
+
     private static func shellQuote(_ value: String) -> String {
-        "'" + value.replacingOccurrences(of: "'", with: "'\\\"'\\\"'") + "'"
+        "'" + value.replacingOccurrences(of: "'", with: "'\"'\"'") + "'"
     }
 
     private static func appleScriptEscape(_ value: String) -> String {
         value
             .replacingOccurrences(of: "\\", with: "\\\\")
             .replacingOccurrences(of: "\"", with: "\\\"")
-    }
-}
-
-private struct JSONLineReader {
-    let handle: FileHandle
-    private var buffer = Data()
-
-    init(handle: FileHandle) {
-        self.handle = handle
-    }
-
-    mutating func nextLine() throws -> Data? {
-        while true {
-            if let newline = buffer.firstIndex(of: 0x0A) {
-                let line = Data(buffer[..<newline])
-                buffer.removeSubrange(...newline)
-                if line.isEmpty { continue }
-                return line
-            }
-
-            let chunk = handle.availableData
-            if chunk.isEmpty {
-                if buffer.isEmpty { return nil }
-                defer { buffer.removeAll() }
-                return buffer
-            }
-            buffer.append(chunk)
-        }
     }
 }

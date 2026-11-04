@@ -13,6 +13,15 @@ enum LocalTodayUsageReader {
     private static func readUsage(for day: String) -> Int64? {
         let sessionsDirectory = FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".codex/sessions", isDirectory: true)
+        return usage(for: day, in: sessionsDirectory)
+    }
+
+    /// Explicit source for isolated callers; the application keeps its default source.
+    static func usage(
+        for day: String, in sessionsDirectory: URL, maximumLineBytes: Int = 8 * 1024 * 1024
+    ) -> Int64? {
+        guard maximumLineBytes > 0 else { return nil }
+        guard DailyUsageBucket.utcDate(for: day) != nil else { return nil }
         guard let enumerator = FileManager.default.enumerator(
             at: sessionsDirectory,
             includingPropertiesForKeys: [.isRegularFileKey],
@@ -29,13 +38,19 @@ enum LocalTodayUsageReader {
                 fileURL.pathExtension == "jsonl",
                 let values = try? fileURL.resourceValues(forKeys: [.isRegularFileKey, .isSymbolicLinkKey]),
                 values.isRegularFile == true,
-                values.isSymbolicLink != true,
-                let fileUsage = readUsage(from: fileURL, for: day)
+                values.isSymbolicLink != true
             else {
                 continue
             }
-            total += fileUsage.total
-            foundTokenEvent = foundTokenEvent || fileUsage.foundTokenEvent
+            do {
+                let fileUsage = try readUsage(from: fileURL, for: day, maximumLineBytes: maximumLineBytes)
+                let (next, overflow) = total.addingReportingOverflow(fileUsage.total)
+                guard !overflow else { return nil }
+                total = next
+                foundTokenEvent = foundTokenEvent || fileUsage.foundTokenEvent
+            } catch {
+                return nil
+            }
         }
 
         return foundTokenEvent ? total : nil
@@ -44,8 +59,12 @@ enum LocalTodayUsageReader {
     /// Session records can contain prompt and response text. Read them in small
     /// chunks and decode only token-count events; raw session content is never
     /// retained beyond the current line or written by this widget.
-    private static func readUsage(from fileURL: URL, for day: String) -> (total: Int64, foundTokenEvent: Bool)? {
-        guard let handle = try? FileHandle(forReadingFrom: fileURL) else { return nil }
+    private enum ReadError: Error { case counterOverflow, lineTooLarge }
+
+    private static func readUsage(
+        from fileURL: URL, for day: String, maximumLineBytes: Int
+    ) throws -> (total: Int64, foundTokenEvent: Bool) {
+        let handle = try FileHandle(forReadingFrom: fileURL)
         defer { try? handle.close() }
 
         var buffer = Data()
@@ -53,42 +72,52 @@ enum LocalTodayUsageReader {
         var foundTokenEvent = false
         var previousCumulativeTotal: Int64?
 
-        func consume(_ line: Data) {
+        let fractionalTimestamp = ISO8601DateFormatter()
+        fractionalTimestamp.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let wholeTimestamp = ISO8601DateFormatter()
+        wholeTimestamp.formatOptions = [.withInternetDateTime]
+
+        func consume(_ line: Data) throws {
             guard
                 let event = try? JSONDecoder().decode(TokenCountEvent.self, from: line),
                 event.type == "event_msg",
                 event.payload?.type == "token_count",
                 let timestamp = event.timestamp,
-                let cumulativeTotal = event.payload?.info?.totalTokenUsage?.totalTokens
+                let date = fractionalTimestamp.date(from: timestamp) ?? wholeTimestamp.date(from: timestamp),
+                let cumulativeTotal = event.payload?.info?.totalTokenUsage?.totalTokens,
+                cumulativeTotal >= 0
             else {
                 return
             }
 
-            if timestamp.hasPrefix(day) {
+            if DailyUsageBucket.utcDayKey(for: date) == day {
+                let delta = previousCumulativeTotal.map {
+                    cumulativeTotal >= $0 ? cumulativeTotal - $0 : cumulativeTotal
+                } ?? cumulativeTotal
+                let (next, overflow) = total.addingReportingOverflow(delta)
+                guard !overflow else { throw ReadError.counterOverflow }
+                total = next
                 foundTokenEvent = true
-                if let previousCumulativeTotal {
-                    total += cumulativeTotal >= previousCumulativeTotal
-                        ? cumulativeTotal - previousCumulativeTotal
-                        : cumulativeTotal
-                } else {
-                    total += cumulativeTotal
-                }
             }
             previousCumulativeTotal = cumulativeTotal
         }
 
         while true {
-            let chunk = handle.availableData
+            let chunk = try handle.read(upToCount: 64 * 1024) ?? Data()
             guard !chunk.isEmpty else { break }
             buffer.append(chunk)
 
             while let newline = buffer.firstIndex(of: 0x0A) {
+                guard buffer.distance(from: buffer.startIndex, to: newline) <= maximumLineBytes else {
+                    throw ReadError.lineTooLarge
+                }
                 let line = Data(buffer[..<newline])
                 buffer.removeSubrange(...newline)
-                if !line.isEmpty { consume(line) }
+                if !line.isEmpty { try consume(line) }
             }
+            guard buffer.count <= maximumLineBytes else { throw ReadError.lineTooLarge }
         }
-        if !buffer.isEmpty { consume(buffer) }
+        if !buffer.isEmpty { try consume(buffer) }
 
         return (total, foundTokenEvent)
     }

@@ -76,17 +76,43 @@ actor UsageStore {
         }
         defer { sqlite3_finalize(statement) }
 
+        guard buckets.allSatisfy(\.isValid) else {
+            throw UsageStoreError.execute("每日统计含无效日期或计数")
+        }
+        guard !buckets.isEmpty else { return }
         let transient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
-        for bucket in buckets {
-            sqlite3_reset(statement)
-            sqlite3_clear_bindings(statement)
-            sqlite3_bind_text(statement, 1, bucket.startDate, -1, transient)
-            sqlite3_bind_int64(statement, 2, bucket.tokens)
-            sqlite3_bind_double(statement, 3, Date().timeIntervalSince1970)
-
-            guard sqlite3_step(statement) == SQLITE_DONE else {
-                throw UsageStoreError.execute(String(cString: sqlite3_errmsg(database)))
+        try execute("BEGIN IMMEDIATE")
+        do {
+            for bucket in buckets {
+                sqlite3_reset(statement)
+                sqlite3_clear_bindings(statement)
+                sqlite3_bind_text(statement, 1, bucket.startDate, -1, transient)
+                sqlite3_bind_int64(statement, 2, bucket.tokens)
+                sqlite3_bind_double(statement, 3, Date().timeIntervalSince1970)
+                guard sqlite3_step(statement) == SQLITE_DONE else {
+                    throw UsageStoreError.execute(String(cString: sqlite3_errmsg(database)))
+                }
             }
+            try execute("COMMIT")
+        } catch {
+            let updateError = error
+            // SQLite may already have rolled back (for example RAISE(ROLLBACK)).
+            if sqlite3_get_autocommit(database) == 0 {
+                do { try execute("ROLLBACK") }
+                catch {
+                    sqlite3_close_v2(database)
+                    self.database = nil
+                    throw UsageStoreError.execute("回滚失败，已停止本地归档连接")
+                }
+            }
+            throw updateError
+        }
+    }
+
+    private func execute(_ sql: String) throws {
+        guard let database else { throw UsageStoreError.open("数据库未初始化") }
+        guard sqlite3_exec(database, sql, nil, nil, nil) == SQLITE_OK else {
+            throw UsageStoreError.execute(String(cString: sqlite3_errmsg(database)))
         }
     }
 
@@ -100,16 +126,21 @@ actor UsageStore {
         defer { sqlite3_finalize(statement) }
 
         var buckets: [DailyUsageBucket] = []
-        while sqlite3_step(statement) == SQLITE_ROW {
-            guard let dateText = sqlite3_column_text(statement, 0) else { continue }
-            buckets.append(
-                DailyUsageBucket(
-                    startDate: String(cString: dateText),
-                    tokens: sqlite3_column_int64(statement, 1)
-                )
-            )
+        while true {
+            let status = sqlite3_step(statement)
+            if status == SQLITE_DONE { return buckets }
+            guard status == SQLITE_ROW else {
+                throw UsageStoreError.execute(String(cString: sqlite3_errmsg(database)))
+            }
+            guard sqlite3_column_type(statement, 0) == SQLITE_TEXT,
+                  sqlite3_column_type(statement, 1) == SQLITE_INTEGER,
+                  let dateText = sqlite3_column_text(statement, 0),
+                  let date = String(bytes: UnsafeBufferPointer(start: dateText, count: Int(sqlite3_column_bytes(statement, 0))), encoding: .utf8)
+            else { throw UsageStoreError.execute("本地历史含无效日记录") }
+            let bucket = DailyUsageBucket(startDate: date, tokens: sqlite3_column_int64(statement, 1))
+            guard bucket.isValid else { throw UsageStoreError.execute("本地历史含无效日记录") }
+            buckets.append(bucket)
         }
-        return buckets
     }
 
 }

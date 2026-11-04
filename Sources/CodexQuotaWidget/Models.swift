@@ -12,7 +12,7 @@ struct RateLimitWindow: Codable, Equatable {
     let resetsAt: Int64?
 
     var remainingPercent: Int {
-        min(100, max(0, 100 - usedPercent))
+        100 - min(100, max(0, usedPercent))
     }
 
     var resetDate: Date? {
@@ -78,6 +78,19 @@ struct ResetCreditsSummary: Codable, Equatable {
     let credits: [ResetCredit]?
 }
 
+enum ResetCreditsPresentation {
+    static func countText(_ summary: ResetCreditsSummary?) -> String {
+        guard let summary, summary.availableCount >= 0 else { return "可用次数未知" }
+        return "可用 \(summary.availableCount) 次"
+    }
+
+    static func emptyDetailsText(_ summary: ResetCreditsSummary?) -> String {
+        guard let summary else { return "服务端未提供重置券信息" }
+        guard summary.availableCount >= 0 else { return "服务端返回的重置次数无效" }
+        return summary.availableCount > 0 ? "可用次数已返回，券明细暂未提供" : "当前没有可用重置券"
+    }
+}
+
 struct RateLimitsResponse: Codable, Equatable {
     let rateLimits: RateLimitSnapshot
     let rateLimitsByLimitId: [String: RateLimitSnapshot]?
@@ -85,21 +98,29 @@ struct RateLimitsResponse: Codable, Equatable {
 
     var orderedBuckets: [RateLimitSnapshot] {
         let values: [RateLimitSnapshot]
-        if let rateLimitsByLimitId {
+        if let rateLimitsByLimitId, !rateLimitsByLimitId.isEmpty {
             values = Array(rateLimitsByLimitId.values)
         } else {
             values = [rateLimits]
         }
         return values.sorted {
-            if $0.limitId == "codex" { return true }
-            if $1.limitId == "codex" { return false }
+            if ($0.limitId == "codex") != ($1.limitId == "codex") {
+                return $0.limitId == "codex"
+            }
             return $0.displayName.localizedCaseInsensitiveCompare($1.displayName) == .orderedAscending
         }
     }
 
     var primaryDisplayBuckets: [RateLimitSnapshot] {
         let primaryBuckets = orderedBuckets.filter { $0.limitId == "codex" }
-        return primaryBuckets.isEmpty ? [rateLimits] : primaryBuckets
+        if !primaryBuckets.isEmpty { return primaryBuckets }
+        // Preserve the legacy unnamed default; an explicit other ID is not
+        // evidence of the global Codex quota and must not masquerade as it.
+        return rateLimits.limitId == nil || rateLimits.limitId == "codex" ? [rateLimits] : []
+    }
+
+    var primaryRemainingPercent: Int? {
+        primaryDisplayBuckets.first?.primary?.remainingPercent
     }
 }
 
@@ -117,16 +138,34 @@ struct DailyUsageBucket: Codable, Equatable, Identifiable {
 
     var id: String { startDate }
 
-    var date: Date? {
-        Self.dateFormatter.date(from: startDate)
+    init(startDate: String, tokens: Int64) {
+        self.startDate = startDate
+        self.tokens = tokens
     }
+
+    private enum CodingKeys: String, CodingKey { case startDate, tokens }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.init(startDate: try container.decode(String.self, forKey: .startDate),
+                  tokens: try container.decode(Int64.self, forKey: .tokens))
+        guard isValid else {
+            throw DecodingError.dataCorrupted(.init(codingPath: decoder.codingPath,
+                                                    debugDescription: "Invalid daily usage bucket."))
+        }
+    }
+
+    var date: Date? { Self.utcDate(for: startDate) }
+
+    var isValid: Bool { tokens >= 0 && date != nil }
 
     static func utcDayKey(for date: Date = .now) -> String {
         dateFormatter.string(from: date)
     }
 
     static func utcDate(for dayKey: String) -> Date? {
-        dateFormatter.date(from: dayKey)
+        guard let date = dateFormatter.date(from: dayKey), dateFormatter.string(from: date) == dayKey else { return nil }
+        return date
     }
 
     private static let dateFormatter: DateFormatter = {
@@ -145,17 +184,26 @@ struct UsageWindowCalculation: Equatable {
     let endDate: String?
     let buckets: [DailyUsageBucket]
 
-    var totalTokens: Int64 {
-        buckets.reduce(into: Int64.zero) { $0 += $1.tokens }
+    var totalTokens: Int64? {
+        var total: Int64 = 0
+        for bucket in buckets {
+            guard bucket.tokens >= 0 else { return nil }
+            let (next, overflow) = total.addingReportingOverflow(bucket.tokens)
+            guard !overflow else { return nil }
+            total = next
+        }
+        return total
     }
 }
 
 enum UsageRollingWindow {
     static func calculate(days: Int, from history: [DailyUsageBucket]) -> UsageWindowCalculation {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
         guard
             days > 0,
             let latestDate = history.compactMap(\.date).max(),
-            let lowerBound = Calendar(identifier: .gregorian).date(
+            let lowerBound = calendar.date(
                 byAdding: .day,
                 value: -(days - 1),
                 to: latestDate

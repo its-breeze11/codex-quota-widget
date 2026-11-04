@@ -705,7 +705,7 @@ private struct ResetCreditsCard: View {
                     .font(.caption2)
                     .foregroundStyle(.tertiary)
                 Spacer()
-                Text("可用 \(summary?.availableCount ?? 0) 次")
+                Text(ResetCreditsPresentation.countText(summary))
                     .font(.subheadline.weight(.semibold))
             }
 
@@ -731,7 +731,7 @@ private struct ResetCreditsCard: View {
                     .foregroundStyle(.secondary)
                 }
             } else {
-                Text(summary == nil ? "服务端未提供重置券信息" : "当前没有可用重置券")
+                Text(ResetCreditsPresentation.emptyDetailsText(summary))
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -790,22 +790,10 @@ private struct UsageHistoryCard: View {
     }
 
     private func updateVisibleHistory() {
-        guard
-            let dayCount = range.dayCount,
-            let latestDate = history.compactMap(\.date).max(),
-            let lowerBound = Calendar(identifier: .gregorian).date(
-                byAdding: .day,
-                value: -(dayCount - 1),
-                to: latestDate
-            )
-        else {
+        if let dayCount = range.dayCount {
+            visibleHistory = UsageRollingWindow.calculate(days: dayCount, from: history).buckets
+        } else {
             visibleHistory = history
-            selectedBucketID = nil
-            return
-        }
-        visibleHistory = history.filter { bucket in
-            guard let date = bucket.date else { return false }
-            return date >= lowerBound && date <= latestDate
         }
         selectedBucketID = nil
     }
@@ -1104,7 +1092,7 @@ private struct UsageCalculationDetailSheet: View {
                 Text("\(selectedDays)d 消耗合计")
                     .font(.subheadline.weight(.semibold))
                 Spacer()
-                Text(calculation.totalTokens.millionTokenCount)
+                Text(calculation.totalTokens?.millionTokenCount ?? "--")
                     .font(.title3.weight(.bold).monospacedDigit())
                     .foregroundStyle(UsagePalette.blue)
             }

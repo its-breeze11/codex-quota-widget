@@ -33,16 +33,17 @@ final class DashboardViewModel: ObservableObject {
     @Published var isNodeInstallPromptVisible = false
     @Published private(set) var isInstallingCLI = false
 
-    private let client = CodexAppServerClient()
+    private let client: CodexAppServerClient
     private let usageStore: UsageStore?
     private var refreshLoop: Task<Void, Never>?
     private var loginWatchTask: Task<Void, Never>?
     private var hasPromptedForCLIInstallation = false
     private var hasPromptedForCLILogin = false
 
-    init() {
+    init(client: CodexAppServerClient = CodexAppServerClient(), databaseURL: URL? = nil) {
+        self.client = client
         do {
-            usageStore = try UsageStore()
+            usageStore = try UsageStore(databaseURL: databaseURL)
         } catch {
             usageStore = nil
             errorMessage = error.localizedDescription
@@ -55,7 +56,7 @@ final class DashboardViewModel: ObservableObject {
     }
 
     var primaryRemainingPercent: Int? {
-        snapshot?.rateLimits.rateLimits.primary?.remainingPercent
+        snapshot?.rateLimits.primaryRemainingPercent
     }
 
     var statusTitle: String {
@@ -89,10 +90,12 @@ final class DashboardViewModel: ObservableObject {
 
     func installCLI() {
         guard !isInstallingCLI else { return }
+        // Claim the operation on the main actor before enqueuing its task.
+        // Two requests in the same turn must not start two npm installations.
+        isInstallingCLI = true
+        errorMessage = nil
         Task { [weak self] in
             guard let self else { return }
-            self.isInstallingCLI = true
-            self.errorMessage = nil
             defer { self.isInstallingCLI = false }
 
             do {
