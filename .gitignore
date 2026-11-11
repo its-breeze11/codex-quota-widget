@@ -17,3 +17,6 @@ dist/
 
 # Local developer identity (auto-generated version suffix)
 .developer
+
+# Machine-local runtime data and migration backups
+data/
